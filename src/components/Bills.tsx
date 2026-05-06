@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, Bill, computeStatus, formatCurrency, formatDate, formatMonth, getCurrentMonth } from '../lib/supabase';
-import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink } from 'lucide-react';
 import BillForm from './BillForm';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -217,7 +217,20 @@ export default function Bills() {
                         {STATUS_LABELS[bill.status]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-medium text-slate-800">{bill.item}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-slate-800">{bill.item}</span>
+                        {bill.external_payment && (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full" title={bill.external_payment_description || 'Pagamento Externo'}>
+                            <ExternalLink size={10} />
+                            Externo
+                          </span>
+                        )}
+                      </div>
+                      {bill.external_payment && bill.external_payment_description && (
+                        <p className="text-xs text-slate-400 mt-0.5">{bill.external_payment_description}</p>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{formatDate(bill.due_date)}</td>
                     <td className="px-4 py-3 text-right font-semibold text-slate-800">{formatCurrency(bill.amount)}</td>
                     <td className="px-4 py-3 text-slate-600">{bill.cost_centers?.name || '—'}</td>

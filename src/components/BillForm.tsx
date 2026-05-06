@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase, Bill, CostCenter, Status, Classification, getCurrentMonth } from '../lib/supabase';
-import { X, Check } from 'lucide-react';
+import { X, Check, ExternalLink } from 'lucide-react';
 
 interface Props {
   bill?: Bill | null;
@@ -18,6 +18,8 @@ const emptyForm = {
   classification: 'fixo' as Classification,
   bank_info: '',
   reference_month: getCurrentMonth(),
+  external_payment: false,
+  external_payment_description: '',
 };
 
 export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props) {
@@ -39,6 +41,8 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
         classification: bill.classification,
         bank_info: bill.bank_info,
         reference_month: bill.reference_month,
+        external_payment: bill.external_payment ?? false,
+        external_payment_description: bill.external_payment_description ?? '',
       });
     }
   }, [bill]);
@@ -54,6 +58,8 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
       classification: form.classification,
       bank_info: form.bank_info,
       reference_month: form.reference_month,
+      external_payment: form.external_payment,
+      external_payment_description: form.external_payment ? form.external_payment_description : '',
       updated_at: new Date().toISOString(),
     };
     if (bill) {
@@ -112,6 +118,50 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
           ))}
           {field('Dado Bancário', <input type="text" value={form.bank_info} onChange={e => setForm(f => ({ ...f, bank_info: e.target.value }))} className={inputClass} placeholder="Banco / Conta / Pix" />)}
         </div>
+
+        {/* External payment section — full width */}
+        <div className="px-6 pb-4">
+          <div className={`border rounded-xl p-4 transition-colors ${form.external_payment ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={form.external_payment}
+                  onChange={e => setForm(f => ({ ...f, external_payment: e.target.checked }))}
+                  className="sr-only"
+                />
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${form.external_payment ? 'bg-amber-500 border-amber-500' : 'bg-white border-slate-300'}`}>
+                  {form.external_payment && <Check size={12} className="text-white" strokeWidth={3} />}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <ExternalLink size={16} className={form.external_payment ? 'text-amber-600' : 'text-slate-400'} />
+                <span className={`text-sm font-medium ${form.external_payment ? 'text-amber-700' : 'text-slate-600'}`}>
+                  Pagamento Externo
+                </span>
+              </div>
+              {form.external_payment && (
+                <span className="ml-auto text-xs text-amber-600 font-medium bg-amber-100 px-2 py-0.5 rounded-full">
+                  Não afeta saldo
+                </span>
+              )}
+            </label>
+            {form.external_payment && (
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-amber-700 mb-1">Por onde foi / será pago?</label>
+                <input
+                  type="text"
+                  value={form.external_payment_description}
+                  onChange={e => setForm(f => ({ ...f, external_payment_description: e.target.value }))}
+                  className="w-full border border-amber-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 text-sm bg-white"
+                  placeholder="Ex: Cartão de crédito, dinheiro, outro banco..."
+                  autoFocus
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="flex gap-3 px-6 pb-6">
           <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium">
             <Check size={16} /> Salvar

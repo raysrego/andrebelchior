@@ -43,12 +43,12 @@ export default function Dashboard() {
 
     const [{ data: balancesData }, { data: billsData }, { data: entriesData }, { data: pendingBills }] = await Promise.all([
       supabase.from('monthly_balances').select('*').in('reference_month', months),
-      supabase.from('bills').select('amount, reference_month, due_date, status').in('reference_month', months),
+      supabase.from('bills').select('amount, reference_month, due_date, status, external_payment').in('reference_month', months),
       supabase.from('income_entries').select('amount, reference_month').in('reference_month', months),
       supabase.from('bills').select('amount, due_date, status').neq('status', 'pago'),
     ]);
 
-    // Compute pending projection (all bills not paid, recalculate status)
+    // Projeção: todas as contas pendentes (independente de external_payment)
     const pendingTotal = (pendingBills || []).reduce((sum, b) => {
       const s = computeStatus(b.due_date, b.status);
       return s !== 'pago' ? sum + b.amount : sum;
@@ -63,10 +63,11 @@ export default function Dashboard() {
       incomeMap[e.reference_month] = (incomeMap[e.reference_month] || 0) + e.amount;
     });
 
+    // expensesMap: apenas contas pagas e NÃO externas (afetam saldo)
     const expensesMap: Record<string, number> = {};
     (billsData || []).forEach(b => {
       const s = computeStatus(b.due_date, b.status);
-      if (s === 'pago') {
+      if (s === 'pago' && !b.external_payment) {
         expensesMap[b.reference_month] = (expensesMap[b.reference_month] || 0) + b.amount;
       }
     });

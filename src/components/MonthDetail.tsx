@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase, Bill, IncomeEntry, formatCurrency, formatDate, formatMonth, computeStatus } from '../lib/supabase';
-import { X, TrendingUp, TrendingDown, FileDown } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, FileDown, ExternalLink } from 'lucide-react';
 
 interface Props {
   month: string;
@@ -37,7 +37,9 @@ export default function MonthDetail({ month, initialBalance, onClose }: Props) {
 
   const totalIncome = entries.reduce((s, e) => s + e.amount, 0);
   const totalBills = bills.reduce((s, b) => s + b.amount, 0);
-  const finalBalance = initialBalance + totalIncome - totalBills;
+  // Saldo final: descontar apenas contas NÃO externas
+  const billsAffectingBalance = bills.filter(b => !b.external_payment).reduce((s, b) => s + b.amount, 0);
+  const finalBalance = initialBalance + totalIncome - billsAffectingBalance;
 
   function handleExportPDF() {
     const printContent = printRef.current;
@@ -155,7 +157,7 @@ export default function MonthDetail({ month, initialBalance, onClose }: Props) {
         ${bills.map(b => `
         <tr>
           <td><span class="badge badge-${b.status}">${STATUS_LABELS[b.status]}</span></td>
-          <td>${b.item}</td>
+          <td>${b.item}${b.external_payment ? ` <span class="badge" style="background:#fef3c7;color:#92400e;margin-left:4px">Externo${b.external_payment_description ? ': ' + b.external_payment_description : ''}</span>` : ''}</td>
           <td class="right" style="color:#dc2626">${formatCurrency(b.amount)}</td>
           <td>${formatDate(b.due_date)}</td>
           <td>${(b.cost_centers as any)?.name || '—'}</td>
@@ -291,7 +293,20 @@ export default function MonthDetail({ month, initialBalance, onClose }: Props) {
                                 {STATUS_LABELS[b.status]}
                               </span>
                             </td>
-                            <td className="px-4 py-2.5 text-slate-800">{b.item}</td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-slate-800">{b.item}</span>
+                                {b.external_payment && (
+                                  <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full" title={b.external_payment_description || 'Pagamento Externo'}>
+                                    <ExternalLink size={9} />
+                                    Externo
+                                  </span>
+                                )}
+                              </div>
+                              {b.external_payment && b.external_payment_description && (
+                                <p className="text-xs text-slate-400 mt-0.5">{b.external_payment_description}</p>
+                              )}
+                            </td>
                             <td className="px-4 py-2.5 text-right font-semibold text-red-600">{formatCurrency(b.amount)}</td>
                             <td className="px-4 py-2.5 text-slate-500">{formatDate(b.due_date)}</td>
                             <td className="px-4 py-2.5 text-slate-500">{(b.cost_centers as any)?.name || '—'}</td>

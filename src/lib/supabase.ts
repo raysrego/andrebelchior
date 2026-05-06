@@ -35,6 +35,8 @@ export type Bill = {
   classification: Classification;
   bank_info: string;
   reference_month: string;  // formato YYYY-MM
+  external_payment: boolean;
+  external_payment_description: string;
   created_at?: string;
   updated_at?: string;
   cost_centers?: { id: string; name: string } | null;
