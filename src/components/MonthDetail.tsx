@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase, Bill, IncomeEntry, formatCurrency, formatDate, formatMonth, computeStatus } from '../lib/supabase';
-import { X, TrendingUp, TrendingDown } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, FileDown } from 'lucide-react';
 
 interface Props {
   month: string;
@@ -20,6 +20,7 @@ export default function MonthDetail({ month, initialBalance, onClose }: Props) {
   const [entries, setEntries] = useState<IncomeEntry[]>([]);
   const [tab, setTab] = useState<'all' | 'income' | 'bills'>('all');
   const [loading, setLoading] = useState(true);
+  const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function load() {
@@ -38,17 +39,164 @@ export default function MonthDetail({ month, initialBalance, onClose }: Props) {
   const totalBills = bills.reduce((s, b) => s + b.amount, 0);
   const finalBalance = initialBalance + totalIncome - totalBills;
 
+  function handleExportPDF() {
+    const printContent = printRef.current;
+    if (!printContent) return;
+
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) return;
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Relatório — ${formatMonth(month)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; color: #1e293b; background: #fff; padding: 32px; }
+    .report-header { border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 24px; }
+    .report-header h1 { font-size: 22px; font-weight: 700; color: #0f172a; }
+    .report-header p { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+    .summary-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; }
+    .summary-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .summary-card .value { font-size: 17px; font-weight: 700; }
+    .summary-card.income .value { color: #059669; }
+    .summary-card.expense .value { color: #dc2626; }
+    .summary-card.balance .value { color: #1d4ed8; }
+    .section { margin-bottom: 28px; }
+    .section-title { font-size: 14px; font-weight: 700; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { background: #f8fafc; }
+    th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+    th.right { text-align: right; }
+    td { padding: 8px 10px; font-size: 12px; color: #334155; border-bottom: 1px solid #f1f5f9; }
+    td.right { text-align: right; font-weight: 600; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 500; }
+    .badge-pago { background: #d1fae5; color: #065f46; }
+    .badge-aberto { background: #dbeafe; color: #1e40af; }
+    .badge-vencido { background: #fee2e2; color: #991b1b; }
+    .total-row td { font-weight: 700; background: #f8fafc; border-top: 2px solid #e2e8f0; }
+    .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; }
+    @media print {
+      body { padding: 20px; }
+      button { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="report-header">
+    <h1>Relatório Financeiro — ${formatMonth(month)}</h1>
+    <p>Gerado em ${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="label">Saldo Inicial</div>
+      <div class="value">${formatCurrency(initialBalance)}</div>
+    </div>
+    <div class="summary-card income">
+      <div class="label">Total de Entradas</div>
+      <div class="value">${formatCurrency(totalIncome)}</div>
+    </div>
+    <div class="summary-card expense">
+      <div class="label">Total de Despesas</div>
+      <div class="value">${formatCurrency(totalBills)}</div>
+    </div>
+    <div class="summary-card balance">
+      <div class="label">Saldo Final</div>
+      <div class="value" style="color:${finalBalance >= 0 ? '#1d4ed8' : '#ea580c'}">${formatCurrency(finalBalance)}</div>
+    </div>
+  </div>
+
+  ${entries.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Entradas</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Descrição</th>
+          <th class="right">Valor</th>
+          <th>Data</th>
+          <th>Origem</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${entries.map(e => `
+        <tr>
+          <td>${e.description}</td>
+          <td class="right" style="color:#059669">${formatCurrency(e.amount)}</td>
+          <td>${formatDate(e.date)}</td>
+          <td>${e.origin || '—'}</td>
+        </tr>`).join('')}
+        <tr class="total-row">
+          <td>Total</td>
+          <td class="right" style="color:#059669">${formatCurrency(totalIncome)}</td>
+          <td></td><td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>` : ''}
+
+  ${bills.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Despesas</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Item</th>
+          <th class="right">Valor</th>
+          <th>Vencimento</th>
+          <th>Centro de Custo</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${bills.map(b => `
+        <tr>
+          <td><span class="badge badge-${b.status}">${STATUS_LABELS[b.status]}</span></td>
+          <td>${b.item}</td>
+          <td class="right" style="color:#dc2626">${formatCurrency(b.amount)}</td>
+          <td>${formatDate(b.due_date)}</td>
+          <td>${(b.cost_centers as any)?.name || '—'}</td>
+        </tr>`).join('')}
+        <tr class="total-row">
+          <td></td>
+          <td>Total</td>
+          <td class="right" style="color:#dc2626">${formatCurrency(totalBills)}</td>
+          <td></td><td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>` : ''}
+
+  <div class="footer">Relatório gerado automaticamente pelo sistema financeiro.</div>
+  <script>window.onload = function() { window.print(); }</script>
+</body>
+</html>`);
+    printWindow.document.close();
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col" ref={printRef}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
           <div>
             <h2 className="text-xl font-bold text-slate-800">{formatMonth(month)}</h2>
             <p className="text-sm text-slate-500 mt-0.5">Detalhamento do mês</p>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportPDF}
+              className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors"
+            >
+              <FileDown size={15} />
+              Exportar PDF
+            </button>
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Summary */}

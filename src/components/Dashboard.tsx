@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, formatCurrency, formatMonth, getCurrentMonth, computeStatus } from '../lib/supabase';
-import { Pencil, Check, X, ChevronRight, TrendingUp, TrendingDown, Wallet, DollarSign } from 'lucide-react';
+import { Pencil, Check, X, ChevronRight, TrendingUp, TrendingDown, Wallet, DollarSign, AlertCircle } from 'lucide-react';
 import MonthDetail from './MonthDetail';
 
 interface MonthData {
@@ -34,17 +34,26 @@ export default function Dashboard() {
   const [editingInitial, setEditingInitial] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [detailMonth, setDetailMonth] = useState<string | null>(null);
+  const [pendingProjection, setPendingProjection] = useState(0);
   const currentMonth = getCurrentMonth();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     const months = getMonthsRange();
 
-    const [{ data: balancesData }, { data: billsData }, { data: entriesData }] = await Promise.all([
+    const [{ data: balancesData }, { data: billsData }, { data: entriesData }, { data: pendingBills }] = await Promise.all([
       supabase.from('monthly_balances').select('*').in('reference_month', months),
       supabase.from('bills').select('amount, reference_month, due_date, status').in('reference_month', months),
       supabase.from('income_entries').select('amount, reference_month').in('reference_month', months),
+      supabase.from('bills').select('amount, due_date, status').neq('status', 'pago'),
     ]);
+
+    // Compute pending projection (all bills not paid, recalculate status)
+    const pendingTotal = (pendingBills || []).reduce((sum, b) => {
+      const s = computeStatus(b.due_date, b.status);
+      return s !== 'pago' ? sum + b.amount : sum;
+    }, 0);
+    setPendingProjection(pendingTotal);
 
     const balancesMap: Record<string, number> = {};
     (balancesData || []).forEach(b => { balancesMap[b.reference_month] = b.initial_balance; });
@@ -56,8 +65,16 @@ export default function Dashboard() {
 
     const expensesMap: Record<string, number> = {};
     (billsData || []).forEach(b => {
-      expensesMap[b.reference_month] = (expensesMap[b.reference_month] || 0) + b.amount;
+      const s = computeStatus(b.due_date, b.status);
+      if (s === 'pago') {
+        expensesMap[b.reference_month] = (expensesMap[b.reference_month] || 0) + b.amount;
+      }
     });
+
+    // Track which months have any entries (bills or income)
+    const monthsWithEntries = new Set<string>();
+    (billsData || []).forEach(b => monthsWithEntries.add(b.reference_month));
+    (entriesData || []).forEach(e => monthsWithEntries.add(e.reference_month));
 
     // Build months data: first month uses stored initial, subsequent months use previous final
     const result: MonthData[] = [];
@@ -90,7 +107,8 @@ export default function Dashboard() {
       prevFinal = finalBalance;
     }
 
-    setMonthsData(result);
+    const filtered = result.filter(md => monthsWithEntries.has(md.month) || md.month === currentMonth);
+    setMonthsData(filtered);
     setLoading(false);
   }, []);
 
@@ -115,7 +133,7 @@ export default function Dashboard() {
       {current && (
         <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 text-white">
           <p className="text-slate-400 text-sm font-medium mb-4">{formatMonth(current.month)} — Mês Atual</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="bg-white/10 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Wallet size={16} className="text-slate-300" />
@@ -156,9 +174,16 @@ export default function Dashboard() {
             <div className="bg-red-500/20 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingDown size={16} className="text-red-300" />
-                <span className="text-xs text-red-300">Despesas</span>
+                <span className="text-xs text-red-300">Despesas Pagas</span>
               </div>
               <p className="text-xl font-bold text-red-300">{formatCurrency(current.expenses)}</p>
+            </div>
+            <div className="bg-amber-500/20 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle size={16} className="text-amber-300" />
+                <span className="text-xs text-amber-300">Projeção de Despesas</span>
+              </div>
+              <p className="text-xl font-bold text-amber-300">{formatCurrency(pendingProjection)}</p>
             </div>
             <div className={`rounded-xl p-4 ${current.finalBalance >= 0 ? 'bg-blue-500/20' : 'bg-orange-500/20'}`}>
               <div className="flex items-center gap-2 mb-2">

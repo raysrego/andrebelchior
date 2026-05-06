@@ -122,10 +122,18 @@ export default function Bills() {
     fetchBills();
   }
 
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
   const filtered = filterStatus ? bills.filter(b => b.status === filterStatus) : bills;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const total = bills.reduce((s, b) => s + b.amount, 0);
   const paid = bills.filter(b => b.status === 'pago').reduce((s, b) => s + b.amount, 0);
   const pending = bills.filter(b => b.status !== 'pago').reduce((s, b) => s + b.amount, 0);
+
+  // Reset page when filter or month changes
+  useEffect(() => { setPage(1); }, [filterStatus, month]);
 
   return (
     <div className="space-y-6">
@@ -202,7 +210,7 @@ export default function Bills() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map(bill => (
+                {paginated.map(bill => (
                   <tr key={bill.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${STATUS_COLORS[bill.status]}`}>
@@ -247,6 +255,38 @@ export default function Bills() {
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+              <span className="text-sm text-slate-500">
+                Exibindo {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length} lançamentos
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${p === page ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
