@@ -1,7 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+// Garantir que a URL não contenha barras extras ou /rest/v1
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.replace(/\/+$/, ''); // remove barra final se houver
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set');
+}
+
+// Verificação extra: a URL não deve conter "/rest/v1"
+if (supabaseUrl.includes('/rest/v1')) {
+  console.warn('Supabase URL contains /rest/v1, removing it...');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -17,14 +27,14 @@ export interface CostCenter {
 
 export type Bill = {
   id: string;
-  status: 'aberto' | 'pago' | 'vencido';
-  due_date: string;
+  status: Status;
+  due_date: string;         // formato YYYY-MM-DD
   item: string;
   amount: number;
   cost_center_id: string;
-  classification: 'fixo' | 'fixo_variavel' | 'extra';
+  classification: Classification;
   bank_info: string;
-  reference_month: string;
+  reference_month: string;  // formato YYYY-MM
   created_at?: string;
   updated_at?: string;
   cost_centers?: { id: string; name: string } | null;
@@ -49,6 +59,7 @@ export interface MonthlyBalance {
   updated_at: string;
 }
 
+// ---------- Funções auxiliares ----------
 export function getCurrentMonth(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -56,8 +67,10 @@ export function getCurrentMonth(): string {
 
 export function formatMonth(ym: string): string {
   const [year, month] = ym.split('-');
-  const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const months = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
   return `${months[parseInt(month) - 1]} ${year}`;
 }
 
