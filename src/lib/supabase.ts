@@ -25,6 +25,13 @@ export interface CostCenter {
   created_at: string;
 }
 
+export interface PaymentSource {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type Bill = {
   id: string;
   status: Status;
@@ -37,9 +44,11 @@ export type Bill = {
   reference_month: string;  // formato YYYY-MM
   external_payment: boolean;
   external_payment_description: string;
+  payment_source_id: string | null;
   created_at?: string;
   updated_at?: string;
   cost_centers?: { id: string; name: string } | null;
+  payment_sources?: { id: string; name: string } | null;
 };
 
 export interface IncomeEntry {

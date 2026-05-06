@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, formatCurrency, formatMonth, getCurrentMonth, computeStatus } from '../lib/supabase';
-import { Pencil, Check, X, ChevronRight, TrendingUp, TrendingDown, Wallet, DollarSign, AlertCircle } from 'lucide-react';
+import { Pencil, Check, X, ChevronRight, TrendingUp, TrendingDown, Wallet, DollarSign, AlertCircle, CreditCard } from 'lucide-react';
 import MonthDetail from './MonthDetail';
 
 interface MonthData {
   month: string;
   initialBalance: number;
   income: number;
-  expenses: number;
+  personalExpenses: number;  // paid, non-external (affects balance)
+  externalExpenses: number;  // paid, external (all sources combined)
   finalBalance: number;
+  sourceBreakdown: Record<string, { name: string; amount: number }>;
 }
 
 function getMonthsRange(): string[] {
@@ -21,7 +23,6 @@ function getMonthsRange(): string[] {
     while (m <= 0) { m += 12; y -= 1; }
     months.push(`${y}-${String(m).padStart(2, '0')}`);
   }
-  // Add next month
   let nm = cm + 1, ny = cy;
   if (nm > 12) { nm = 1; ny += 1; }
   months.push(`${ny}-${String(nm).padStart(2, '0')}`);
@@ -41,19 +42,28 @@ export default function Dashboard() {
     setLoading(true);
     const months = getMonthsRange();
 
-    const [{ data: balancesData }, { data: billsData }, { data: entriesData }, { data: pendingBills }] = await Promise.all([
+    const [
+      { data: balancesData },
+      { data: billsData },
+      { data: entriesData },
+      { data: pendingBills },
+      { data: sourcesData },
+    ] = await Promise.all([
       supabase.from('monthly_balances').select('*').in('reference_month', months),
-      supabase.from('bills').select('amount, reference_month, due_date, status, external_payment').in('reference_month', months),
+      supabase.from('bills').select('amount, reference_month, due_date, status, external_payment, payment_source_id').in('reference_month', months),
       supabase.from('income_entries').select('amount, reference_month').in('reference_month', months),
       supabase.from('bills').select('amount, due_date, status').neq('status', 'pago'),
+      supabase.from('payment_sources').select('id, name'),
     ]);
 
-    // Projeção: todas as contas pendentes (independente de external_payment)
     const pendingTotal = (pendingBills || []).reduce((sum, b) => {
       const s = computeStatus(b.due_date, b.status);
       return s !== 'pago' ? sum + b.amount : sum;
     }, 0);
     setPendingProjection(pendingTotal);
+
+    const sourcesMap: Record<string, string> = {};
+    (sourcesData || []).forEach(s => { sourcesMap[s.id] = s.name; });
 
     const balancesMap: Record<string, number> = {};
     (balancesData || []).forEach(b => { balancesMap[b.reference_month] = b.initial_balance; });
@@ -63,35 +73,43 @@ export default function Dashboard() {
       incomeMap[e.reference_month] = (incomeMap[e.reference_month] || 0) + e.amount;
     });
 
-    // expensesMap: apenas contas pagas e NÃO externas (afetam saldo)
-    const expensesMap: Record<string, number> = {};
+    // personalExpensesMap: paid, NOT external
+    const personalExpensesMap: Record<string, number> = {};
+    // externalExpensesMap: paid, external (all sources combined)
+    const externalExpensesMap: Record<string, number> = {};
+    // sourceBreakdownMap: per month, per source_id
+    const sourceBreakdownMap: Record<string, Record<string, number>> = {};
+
     (billsData || []).forEach(b => {
       const s = computeStatus(b.due_date, b.status);
-      if (s === 'pago' && !b.external_payment) {
-        expensesMap[b.reference_month] = (expensesMap[b.reference_month] || 0) + b.amount;
+      if (s !== 'pago') return;
+      if (!b.external_payment) {
+        personalExpensesMap[b.reference_month] = (personalExpensesMap[b.reference_month] || 0) + b.amount;
+      } else {
+        externalExpensesMap[b.reference_month] = (externalExpensesMap[b.reference_month] || 0) + b.amount;
+        if (b.payment_source_id) {
+          if (!sourceBreakdownMap[b.reference_month]) sourceBreakdownMap[b.reference_month] = {};
+          sourceBreakdownMap[b.reference_month][b.payment_source_id] =
+            (sourceBreakdownMap[b.reference_month][b.payment_source_id] || 0) + b.amount;
+        }
       }
     });
 
-    // Track which months have any entries (bills or income)
     const monthsWithEntries = new Set<string>();
     (billsData || []).forEach(b => monthsWithEntries.add(b.reference_month));
     (entriesData || []).forEach(e => monthsWithEntries.add(e.reference_month));
 
-    // Build months data: first month uses stored initial, subsequent months use previous final
     const result: MonthData[] = [];
     let prevFinal: number | null = null;
 
     for (const month of months) {
       let initialBalance: number;
       if (prevFinal !== null) {
-        // Check if stored balance differs from computed; if it's been manually set, respect it
         const stored = balancesMap[month];
-        // Always propagate previous final if no manual override
         if (stored !== undefined && stored !== 0) {
           initialBalance = stored;
         } else {
           initialBalance = prevFinal;
-          // Auto-save if not already stored
           if (stored === undefined) {
             supabase.from('monthly_balances').upsert({ reference_month: month, initial_balance: prevFinal }, { onConflict: 'reference_month' });
           }
@@ -101,10 +119,18 @@ export default function Dashboard() {
       }
 
       const income = incomeMap[month] || 0;
-      const expenses = expensesMap[month] || 0;
-      const finalBalance = initialBalance + income - expenses;
+      const personalExpenses = personalExpensesMap[month] || 0;
+      const externalExpenses = externalExpensesMap[month] || 0;
+      const finalBalance = initialBalance + income - personalExpenses;
 
-      result.push({ month, initialBalance, income, expenses, finalBalance });
+      // Build source breakdown with names
+      const rawBreakdown = sourceBreakdownMap[month] || {};
+      const sourceBreakdown: Record<string, { name: string; amount: number }> = {};
+      Object.entries(rawBreakdown).forEach(([sourceId, amount]) => {
+        sourceBreakdown[sourceId] = { name: sourcesMap[sourceId] || 'Fonte desconhecida', amount };
+      });
+
+      result.push({ month, initialBalance, income, personalExpenses, externalExpenses, finalBalance, sourceBreakdown });
       prevFinal = finalBalance;
     }
 
@@ -122,6 +148,7 @@ export default function Dashboard() {
   }
 
   const current = monthsData.find(m => m.month === currentMonth);
+  const totalPaidGeneral = current ? current.personalExpenses + current.externalExpenses : 0;
 
   return (
     <div className="space-y-6">
@@ -130,69 +157,108 @@ export default function Dashboard() {
         <p className="text-slate-500 mt-1">Visão geral financeira</p>
       </div>
 
-      {/* Current Month Hero */}
+      {/* Central highlight cards */}
       {current && (
-        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 text-white">
-          <p className="text-slate-400 text-sm font-medium mb-4">{formatMonth(current.month)} — Mês Atual</p>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="bg-white/10 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Wallet size={16} className="text-slate-300" />
-                <span className="text-xs text-slate-300">Saldo Inicial</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-amber-500 rounded-2xl p-6 text-white flex flex-col items-center justify-center text-center shadow-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle size={20} className="text-amber-100" />
+              <span className="text-sm font-medium text-amber-100">Projeção de Despesas</span>
+            </div>
+            <p className="text-3xl font-bold">{formatCurrency(pendingProjection)}</p>
+            <p className="text-xs text-amber-200 mt-1">Contas pendentes (todos os meses)</p>
+          </div>
+          <div className="bg-slate-800 rounded-2xl p-6 text-white flex flex-col items-center justify-center text-center shadow-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <DollarSign size={20} className="text-slate-300" />
+              <span className="text-sm font-medium text-slate-300">Despesas Pagas Geral</span>
+            </div>
+            <p className="text-3xl font-bold">{formatCurrency(totalPaidGeneral)}</p>
+            <p className="text-xs text-slate-400 mt-1">{formatMonth(current.month)} — Pessoal + Outras Fontes</p>
+          </div>
+        </div>
+      )}
+
+      {/* Current month breakdown */}
+      {current && (
+        <div className="space-y-4">
+          {/* Row 1: Movimentações Conta Pessoal */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Movimentações Conta Pessoal — {formatMonth(current.month)}</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-slate-50 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Wallet size={16} className="text-slate-500" />
+                  <span className="text-xs text-slate-500">Saldo Inicial</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <p className="text-lg font-bold text-slate-800">{formatCurrency(current.initialBalance)}</p>
+                  {editingInitial === current.month ? (
+                    <div className="flex items-center gap-1 ml-1">
+                      <input
+                        type="number"
+                        value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        className="w-20 text-xs border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        autoFocus
+                      />
+                      <button onClick={() => saveInitialBalance(current.month, parseFloat(editValue) || 0)} className="p-1 bg-emerald-500 text-white rounded hover:bg-emerald-600 transition-colors">
+                        <Check size={10} />
+                      </button>
+                      <button onClick={() => setEditingInitial(null)} className="p-1 border border-slate-300 rounded hover:bg-slate-50 transition-colors">
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setEditingInitial(current.month); setEditValue(String(current.initialBalance)); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors">
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <p className="text-xl font-bold">{formatCurrency(current.initialBalance)}</p>
-                {editingInitial === current.month ? (
-                  <div className="flex items-center gap-1 ml-2">
-                    <input
-                      type="number"
-                      value={editValue}
-                      onChange={e => setEditValue(e.target.value)}
-                      className="w-24 bg-white/20 text-white text-sm border border-white/30 rounded px-2 py-1 focus:outline-none"
-                      autoFocus
-                    />
-                    <button onClick={() => saveInitialBalance(current.month, parseFloat(editValue) || 0)} className="p-1 bg-emerald-500 rounded hover:bg-emerald-600 transition-colors">
-                      <Check size={12} />
-                    </button>
-                    <button onClick={() => setEditingInitial(null)} className="p-1 bg-white/20 rounded hover:bg-white/30 transition-colors">
-                      <X size={12} />
-                    </button>
+              <div className="bg-emerald-50 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp size={16} className="text-emerald-600" />
+                  <span className="text-xs text-emerald-600">Entradas</span>
+                </div>
+                <p className="text-lg font-bold text-emerald-700">{formatCurrency(current.income)}</p>
+              </div>
+              <div className="bg-red-50 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingDown size={16} className="text-red-600" />
+                  <span className="text-xs text-red-600">Despesas Pagas</span>
+                </div>
+                <p className="text-lg font-bold text-red-700">{formatCurrency(current.personalExpenses)}</p>
+              </div>
+              <div className={`rounded-xl p-4 ${current.finalBalance >= 0 ? 'bg-blue-50' : 'bg-orange-50'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign size={16} className={current.finalBalance >= 0 ? 'text-blue-600' : 'text-orange-600'} />
+                  <span className={`text-xs ${current.finalBalance >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>Saldo Final</span>
+                </div>
+                <p className={`text-lg font-bold ${current.finalBalance >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>{formatCurrency(current.finalBalance)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: Movimentações Outras Fontes Pagadoras */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Movimentações Outras Fontes Pagadoras — {formatMonth(current.month)}</p>
+            {Object.keys(current.sourceBreakdown).length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">Nenhuma despesa registrada com fonte pagadora neste mês.</p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {Object.values(current.sourceBreakdown).map(({ name, amount }) => (
+                  <div key={name} className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CreditCard size={16} className="text-amber-600" />
+                      <span className="text-xs text-amber-700 font-medium truncate">{name}</span>
+                    </div>
+                    <p className="text-xs text-amber-600 mb-0.5">Despesas Pagas</p>
+                    <p className="text-lg font-bold text-amber-700">{formatCurrency(amount)}</p>
                   </div>
-                ) : (
-                  <button onClick={() => { setEditingInitial(current.month); setEditValue(String(current.initialBalance)); }} className="p-1 text-slate-400 hover:text-white transition-colors">
-                    <Pencil size={14} />
-                  </button>
-                )}
+                ))}
               </div>
-            </div>
-            <div className="bg-emerald-500/20 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <TrendingUp size={16} className="text-emerald-300" />
-                <span className="text-xs text-emerald-300">Entradas</span>
-              </div>
-              <p className="text-xl font-bold text-emerald-300">{formatCurrency(current.income)}</p>
-            </div>
-            <div className="bg-red-500/20 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <TrendingDown size={16} className="text-red-300" />
-                <span className="text-xs text-red-300">Despesas Pagas</span>
-              </div>
-              <p className="text-xl font-bold text-red-300">{formatCurrency(current.expenses)}</p>
-            </div>
-            <div className="bg-amber-500/20 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertCircle size={16} className="text-amber-300" />
-                <span className="text-xs text-amber-300">Projeção de Despesas</span>
-              </div>
-              <p className="text-xl font-bold text-amber-300">{formatCurrency(pendingProjection)}</p>
-            </div>
-            <div className={`rounded-xl p-4 ${current.finalBalance >= 0 ? 'bg-blue-500/20' : 'bg-orange-500/20'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <DollarSign size={16} className={current.finalBalance >= 0 ? 'text-blue-300' : 'text-orange-300'} />
-                <span className={`text-xs ${current.finalBalance >= 0 ? 'text-blue-300' : 'text-orange-300'}`}>Saldo Final</span>
-              </div>
-              <p className={`text-xl font-bold ${current.finalBalance >= 0 ? 'text-blue-300' : 'text-orange-300'}`}>{formatCurrency(current.finalBalance)}</p>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -254,8 +320,8 @@ export default function Dashboard() {
                       <p className="font-semibold text-emerald-600 text-sm">{formatCurrency(md.income)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-slate-400 mb-0.5">Despesas</p>
-                      <p className="font-semibold text-red-600 text-sm">{formatCurrency(md.expenses)}</p>
+                      <p className="text-xs text-slate-400 mb-0.5">Despesas Pagas</p>
+                      <p className="font-semibold text-red-600 text-sm">{formatCurrency(md.personalExpenses + md.externalExpenses)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-400 mb-0.5">Saldo Final</p>

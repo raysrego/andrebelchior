@@ -1,18 +1,20 @@
 import { useState } from 'react';
-import { LayoutDashboard, FileText, TrendingUp, Building2, BarChart3, Menu, X } from 'lucide-react';
+import { LayoutDashboard, FileText, TrendingUp, Building2, BarChart3, Menu, X, CreditCard } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Bills from './components/Bills';
 import IncomeEntries from './components/IncomeEntries';
 import CostCenters from './components/CostCenters';
+import PaymentSources from './components/PaymentSources';
 import Reports from './components/Reports';
 
-type Tab = 'dashboard' | 'bills' | 'income' | 'costcenters' | 'reports';
+type Tab = 'dashboard' | 'bills' | 'income' | 'costcenters' | 'paymentsources' | 'reports';
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode; color: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, color: 'text-slate-600' },
   { id: 'bills', label: 'Contas a Pagar', icon: <FileText size={20} />, color: 'text-blue-600' },
   { id: 'income', label: 'Entradas', icon: <TrendingUp size={20} />, color: 'text-emerald-600' },
   { id: 'costcenters', label: 'Centros de Custo', icon: <Building2 size={20} />, color: 'text-orange-600' },
+  { id: 'paymentsources', label: 'Fontes Pagadoras', icon: <CreditCard size={20} />, color: 'text-amber-600' },
   { id: 'reports', label: 'Relatórios', icon: <BarChart3 size={20} />, color: 'text-teal-600' },
 ];
 
@@ -94,6 +96,7 @@ export default function App() {
             {activeTab === 'bills' && <Bills />}
             {activeTab === 'income' && <IncomeEntries />}
             {activeTab === 'costcenters' && <CostCenters />}
+            {activeTab === 'paymentsources' && <PaymentSources />}
             {activeTab === 'reports' && <Reports />}
           </div>
         </main>

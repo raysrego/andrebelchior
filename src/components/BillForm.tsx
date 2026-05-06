@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase, Bill, CostCenter, Status, Classification, getCurrentMonth } from '../lib/supabase';
+import { supabase, Bill, CostCenter, PaymentSource, Status, Classification, getCurrentMonth } from '../lib/supabase';
 import { X, Check, ExternalLink } from 'lucide-react';
 
 interface Props {
@@ -20,14 +20,17 @@ const emptyForm = {
   reference_month: getCurrentMonth(),
   external_payment: false,
   external_payment_description: '',
+  payment_source_id: '',
 };
 
 export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props) {
   const [form, setForm] = useState({ ...emptyForm, reference_month: defaultMonth || getCurrentMonth() });
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
 
   useEffect(() => {
     supabase.from('cost_centers').select('*').order('name').then(({ data }) => setCostCenters(data || []));
+    supabase.from('payment_sources').select('*').order('name').then(({ data }) => setPaymentSources(data || []));
   }, []);
 
   useEffect(() => {
@@ -43,6 +46,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
         reference_month: bill.reference_month,
         external_payment: bill.external_payment ?? false,
         external_payment_description: bill.external_payment_description ?? '',
+        payment_source_id: bill.payment_source_id || '',
       });
     }
   }, [bill]);
@@ -60,6 +64,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
       reference_month: form.reference_month,
       external_payment: form.external_payment,
       external_payment_description: form.external_payment ? form.external_payment_description : '',
+      payment_source_id: form.external_payment && form.payment_source_id ? form.payment_source_id : null,
       updated_at: new Date().toISOString(),
     };
     if (bill) {
@@ -127,7 +132,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
                 <input
                   type="checkbox"
                   checked={form.external_payment}
-                  onChange={e => setForm(f => ({ ...f, external_payment: e.target.checked }))}
+                  onChange={e => setForm(f => ({ ...f, external_payment: e.target.checked, payment_source_id: '' }))}
                   className="sr-only"
                 />
                 <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${form.external_payment ? 'bg-amber-500 border-amber-500' : 'bg-white border-slate-300'}`}>
@@ -148,15 +153,21 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
             </label>
             {form.external_payment && (
               <div className="mt-3">
-                <label className="block text-sm font-medium text-amber-700 mb-1">Por onde foi / será pago?</label>
-                <input
-                  type="text"
-                  value={form.external_payment_description}
-                  onChange={e => setForm(f => ({ ...f, external_payment_description: e.target.value }))}
+                <label className="block text-sm font-medium text-amber-700 mb-1">Fonte Pagadora</label>
+                <select
+                  value={form.payment_source_id}
+                  onChange={e => setForm(f => ({ ...f, payment_source_id: e.target.value }))}
                   className="w-full border border-amber-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 text-sm bg-white"
-                  placeholder="Ex: Cartão de crédito, dinheiro, outro banco..."
                   autoFocus
-                />
+                >
+                  <option value="">— Selecione a fonte pagadora —</option>
+                  {paymentSources.map(ps => (
+                    <option key={ps.id} value={ps.id}>{ps.name}</option>
+                  ))}
+                </select>
+                {paymentSources.length === 0 && (
+                  <p className="text-xs text-amber-600 mt-1">Nenhuma fonte pagadora cadastrada. Acesse o menu Fontes Pagadoras para cadastrar.</p>
+                )}
               </div>
             )}
           </div>

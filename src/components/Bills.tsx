@@ -76,10 +76,22 @@ export default function Bills() {
       if (centers) centersMap = new Map(centers.map(c => [c.id, c]));
     }
 
+    // payment_sources
+    const paymentSourceIds = [...new Set(billsData.map(b => b.payment_source_id).filter(id => id))];
+    let sourcesMap = new Map();
+    if (paymentSourceIds.length > 0) {
+      const { data: sources } = await supabase
+        .from('payment_sources')
+        .select('id, name')
+        .in('id', paymentSourceIds);
+      if (sources) sourcesMap = new Map(sources.map(s => [s.id, s]));
+    }
+
     // 3. Enriquecer com nome do centro de custo e recalcular status
     const updated = billsData.map(b => ({
       ...b,
       cost_centers: centersMap.get(b.cost_center_id) || null,
+      payment_sources: sourcesMap.get(b.payment_source_id) || null,
       status: computeStatus(b.due_date, b.status),
     })) as Bill[];
 
@@ -221,13 +233,13 @@ export default function Bills() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-slate-800">{bill.item}</span>
                         {bill.external_payment && (
-                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full" title={bill.external_payment_description || 'Pagamento Externo'}>
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full" title={(bill.payment_sources as any)?.name || 'Pagamento Externo'}>
                             <ExternalLink size={10} />
-                            Externo
+                            {(bill.payment_sources as any)?.name || 'Externo'}
                           </span>
                         )}
                       </div>
-                      {bill.external_payment && bill.external_payment_description && (
+                      {bill.external_payment && !(bill.payment_sources as any)?.name && bill.external_payment_description && (
                         <p className="text-xs text-slate-400 mt-0.5">{bill.external_payment_description}</p>
                       )}
                     </td>

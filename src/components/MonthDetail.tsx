@@ -25,7 +25,7 @@ export default function MonthDetail({ month, initialBalance, onClose }: Props) {
   useEffect(() => {
     async function load() {
       const [{ data: billsData }, { data: entriesData }] = await Promise.all([
-        supabase.from('bills').select('*, cost_centers(id, name)').eq('reference_month', month).order('due_date'),
+        supabase.from('bills').select('*, cost_centers(id, name), payment_sources(id, name)').eq('reference_month', month).order('due_date'),
         supabase.from('income_entries').select('*').eq('reference_month', month).order('date'),
       ]);
       setBills((billsData || []).map(b => ({ ...b, status: computeStatus(b.due_date, b.status) })) as Bill[]);
@@ -157,7 +157,7 @@ export default function MonthDetail({ month, initialBalance, onClose }: Props) {
         ${bills.map(b => `
         <tr>
           <td><span class="badge badge-${b.status}">${STATUS_LABELS[b.status]}</span></td>
-          <td>${b.item}${b.external_payment ? ` <span class="badge" style="background:#fef3c7;color:#92400e;margin-left:4px">Externo${b.external_payment_description ? ': ' + b.external_payment_description : ''}</span>` : ''}</td>
+          <td>${b.item}${b.external_payment ? ` <span class="badge" style="background:#fef3c7;color:#92400e;margin-left:4px">${(b.payment_sources as any)?.name || b.external_payment_description || 'Externo'}</span>` : ''}</td>
           <td class="right" style="color:#dc2626">${formatCurrency(b.amount)}</td>
           <td>${formatDate(b.due_date)}</td>
           <td>${(b.cost_centers as any)?.name || '—'}</td>
@@ -297,13 +297,13 @@ export default function MonthDetail({ month, initialBalance, onClose }: Props) {
                               <div className="flex items-center gap-1.5">
                                 <span className="text-slate-800">{b.item}</span>
                                 {b.external_payment && (
-                                  <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full" title={b.external_payment_description || 'Pagamento Externo'}>
+                                  <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full" title={(b.payment_sources as any)?.name || 'Pagamento Externo'}>
                                     <ExternalLink size={9} />
-                                    Externo
+                                    {(b.payment_sources as any)?.name || 'Externo'}
                                   </span>
                                 )}
                               </div>
-                              {b.external_payment && b.external_payment_description && (
+                              {b.external_payment && !(b.payment_sources as any)?.name && b.external_payment_description && (
                                 <p className="text-xs text-slate-400 mt-0.5">{b.external_payment_description}</p>
                               )}
                             </td>
