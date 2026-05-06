@@ -45,20 +45,53 @@ export default function Bills() {
 
   const fetchBills = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
+    // 1. Buscar contas do mês
+    const { data: billsData, error: billsError } = await supabase
       .from('bills')
-      .select('*, cost_centers(id, name)')
+      .select('*')
       .eq('reference_month', month)
       .order('due_date');
 
-    if (data) {
-      const updated = data.map(b => ({ ...b, status: computeStatus(b.due_date, b.status) }));
-      const toUpdate = updated.filter((b, i) => b.status !== data[i].status);
-      if (toUpdate.length > 0) {
-        await Promise.all(toUpdate.map(b => supabase.from('bills').update({ status: b.status }).eq('id', b.id)));
-      }
-      setBills(updated as Bill[]);
+    if (billsError) {
+      console.error(billsError);
+      setBills([]);
+      setLoading(false);
+      return;
     }
+
+    if (!billsData || billsData.length === 0) {
+      setBills([]);
+      setLoading(false);
+      return;
+    }
+
+    // 2. IDs únicos dos centros de custo
+    const costCenterIds = [...new Set(billsData.map(b => b.cost_center_id).filter(id => id))];
+    let centersMap = new Map();
+    if (costCenterIds.length > 0) {
+      const { data: centers } = await supabase
+        .from('cost_centers')
+        .select('id, name')
+        .in('id', costCenterIds);
+      if (centers) centersMap = new Map(centers.map(c => [c.id, c]));
+    }
+
+    // 3. Enriquecer com nome do centro de custo e recalcular status
+    const updated = billsData.map(b => ({
+      ...b,
+      cost_centers: centersMap.get(b.cost_center_id) || null,
+      status: computeStatus(b.due_date, b.status),
+    })) as Bill[];
+
+    // 4. Atualizar status no banco (se necessário)
+    const toUpdate = updated.filter((b, idx) => b.status !== billsData[idx].status);
+    if (toUpdate.length > 0) {
+      await Promise.all(
+        toUpdate.map(b => supabase.from('bills').update({ status: b.status }).eq('id', b.id))
+      );
+    }
+
+    setBills(updated);
     setLoading(false);
   }, [month]);
 
@@ -96,6 +129,7 @@ export default function Bills() {
 
   return (
     <div className="space-y-6">
+      {/* Cabeçalho e navegação (idênticos ao original) */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Contas a Pagar</h1>
@@ -110,7 +144,6 @@ export default function Bills() {
         </button>
       </div>
 
-      {/* Month navigation */}
       <div className="flex items-center gap-4 bg-white rounded-xl border border-slate-200 shadow-sm p-4">
         <button onClick={() => setMonth(prevMonth(month))} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
           <ChevronLeft size={20} className="text-slate-600" />
@@ -130,7 +163,6 @@ export default function Bills() {
         </div>
       </div>
 
-      {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 text-center">
           <p className="text-xs text-slate-500 mb-1">Total do Mês</p>
@@ -146,7 +178,6 @@ export default function Bills() {
         </div>
       </div>
 
-      {/* Table */}
       {loading ? (
         <div className="text-center py-12 text-slate-400">Carregando...</div>
       ) : filtered.length === 0 ? (
@@ -181,7 +212,7 @@ export default function Bills() {
                     <td className="px-4 py-3 font-medium text-slate-800">{bill.item}</td>
                     <td className="px-4 py-3 text-slate-600">{formatDate(bill.due_date)}</td>
                     <td className="px-4 py-3 text-right font-semibold text-slate-800">{formatCurrency(bill.amount)}</td>
-                    <td className="px-4 py-3 text-slate-600">{(bill.cost_centers as any)?.name || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{bill.cost_centers?.name || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{CLASS_LABELS[bill.classification]}</td>
                     <td className="px-4 py-3 text-slate-500 text-sm">{bill.bank_info || '—'}</td>
                     <td className="px-4 py-3">
