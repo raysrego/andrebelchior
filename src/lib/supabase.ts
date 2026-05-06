@@ -15,20 +15,20 @@ export interface CostCenter {
   created_at: string;
 }
 
-export interface Bill {
+export type Bill = {
   id: string;
-  status: Status;
+  status: 'aberto' | 'pago' | 'vencido';
   due_date: string;
   item: string;
   amount: number;
-  cost_center_id: string | null;
-  classification: Classification;
+  cost_center_id: string;
+  classification: 'fixo' | 'fixo_variavel' | 'extra';
   bank_info: string;
   reference_month: string;
-  created_at: string;
-  updated_at: string;
-  cost_centers?: CostCenter;
-}
+  created_at?: string;
+  updated_at?: string;
+  cost_centers?: { id: string; name: string } | null;
+};
 
 export interface IncomeEntry {
   id: string;
