@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, Bill, CostCenter, PaymentSource, computeStatus, formatCurrency, formatDate, formatMonth, getCurrentMonth, todayLocal } from '../lib/supabase';
-import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink, Bell, Paperclip } from 'lucide-react';
+import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink, Bell, Paperclip, AlertTriangle, CopyCheck } from 'lucide-react';
 import BillForm from './BillForm';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -48,6 +48,9 @@ export default function Bills() {
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
   const [dismissedAlert, setDismissedAlert] = useState(false);
+  const [dismissedOverdue, setDismissedOverdue] = useState(false);
+  const [replicateMonthConfirm, setReplicateMonthConfirm] = useState(false);
+  const [replicatingMonth, setReplicatingMonth] = useState(false);
 
   useEffect(() => {
     supabase.from('cost_centers').select('*').order('name').then(({ data }) => setCostCenters(data || []));
@@ -144,6 +147,33 @@ export default function Bills() {
     fetchBills();
   }
 
+  async function handleReplicateMonth() {
+    setReplicatingMonth(true);
+    const nm = nextMonth(month);
+    const [y, m] = nm.split('-').map(Number);
+    const toReplicate = bills.filter(b => b.status !== 'pago');
+    await Promise.all(toReplicate.map(bill => {
+      const dueDay = parseInt(bill.due_date.split('-')[2], 10);
+      const newDue = `${y}-${String(m).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
+      return supabase.from('bills').insert({
+        status: 'aberto',
+        due_date: newDue,
+        item: bill.item,
+        amount: bill.amount,
+        cost_center_id: bill.cost_center_id,
+        classification: bill.classification,
+        bank_info: bill.bank_info,
+        reference_month: nm,
+        external_payment: bill.external_payment,
+        external_payment_description: bill.external_payment_description,
+        payment_source_id: bill.payment_source_id,
+      });
+    }));
+    setReplicatingMonth(false);
+    setReplicateMonthConfirm(false);
+    setMonth(nm);
+  }
+
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
@@ -166,8 +196,10 @@ export default function Bills() {
 
   const today = todayLocal();
   const dueTodayBills = bills.filter(b => b.due_date === today && b.status !== 'pago');
+  const overdueBills = bills.filter(b => b.status === 'vencido');
 
-  useEffect(() => { setPage(1); }, [filterStatus, filterCostCenter, filterPaymentSource, month]);
+  useEffect(() => { setPage(1); setDismissedAlert(false); setDismissedOverdue(false); }, [month]);
+  useEffect(() => { setPage(1); }, [filterStatus, filterCostCenter, filterPaymentSource]);
 
   return (
     <div className="space-y-4">
@@ -176,39 +208,94 @@ export default function Bills() {
           <h1 className="text-2xl font-bold text-slate-800">Contas a Pagar</h1>
           <p className="text-slate-500 mt-1">Gerencie suas despesas mensais</p>
         </div>
-        <button
-          onClick={() => { setEditBill(null); setShowForm(true); }}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-        >
-          <Plus size={18} />
-          Nova Conta
-        </button>
+        <div className="flex items-center gap-2">
+          {replicateMonthConfirm ? (
+            <div className="flex items-center gap-2 bg-teal-50 border border-teal-300 rounded-lg px-3 py-2">
+              <span className="text-sm text-teal-800 font-medium">
+                Replicar {bills.filter(b => b.status !== 'pago').length} conta(s) para {formatMonth(nextMonth(month))}?
+              </span>
+              <button
+                onClick={handleReplicateMonth}
+                disabled={replicatingMonth}
+                className="px-3 py-1 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+              >
+                {replicatingMonth ? 'Replicando...' : 'Sim'}
+              </button>
+              <button
+                onClick={() => setReplicateMonthConfirm(false)}
+                className="px-3 py-1 border border-slate-300 text-slate-600 text-sm rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Não
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setReplicateMonthConfirm(true)}
+              disabled={bills.filter(b => b.status !== 'pago').length === 0}
+              className="flex items-center gap-2 border border-teal-300 text-teal-700 bg-teal-50 px-4 py-2 rounded-lg hover:bg-teal-100 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              title={`Replicar contas em aberto para ${formatMonth(nextMonth(month))}`}
+            >
+              <CopyCheck size={16} />
+              Replicar Mês
+            </button>
+          )}
+          <button
+            onClick={() => { setEditBill(null); setShowForm(true); }}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            <Plus size={18} />
+            Nova Conta
+          </button>
+        </div>
       </div>
 
-      {/* Today's alert */}
-      {dueTodayBills.length > 0 && !dismissedAlert && (
-        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3">
-          <Bell size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-amber-800">
-              {dueTodayBills.length} conta{dueTodayBills.length > 1 ? 's vencem' : ' vence'} hoje!
-            </p>
-            <ul className="mt-1 space-y-0.5">
-              {dueTodayBills.map(b => (
-                <li key={b.id} className="text-xs text-amber-700 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-                  <span className="font-medium">{b.item}</span>
-                  <span className="text-amber-600">— {formatCurrency(b.amount)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <button
-            onClick={() => setDismissedAlert(true)}
-            className="text-amber-500 hover:text-amber-700 transition-colors"
-          >
-            <ChevronRight size={16} className="rotate-90" />
-          </button>
+      {/* Alerts row */}
+      {(dueTodayBills.length > 0 || overdueBills.length > 0) && (
+        <div className="flex flex-col sm:flex-row gap-3">
+          {dueTodayBills.length > 0 && !dismissedAlert && (
+            <div className="flex-1 bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3">
+              <Bell size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-800">
+                  {dueTodayBills.length} conta{dueTodayBills.length > 1 ? 's vencem' : ' vence'} hoje!
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {dueTodayBills.map(b => (
+                    <li key={b.id} className="text-xs text-amber-700 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                      <span className="font-medium truncate">{b.item}</span>
+                      <span className="text-amber-600 flex-shrink-0">— {formatCurrency(b.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button onClick={() => setDismissedAlert(true)} className="text-amber-400 hover:text-amber-600 transition-colors flex-shrink-0">
+                <ChevronRight size={16} className="rotate-90" />
+              </button>
+            </div>
+          )}
+          {overdueBills.length > 0 && !dismissedOverdue && (
+            <div className="flex-1 bg-red-50 border border-red-300 rounded-xl p-4 flex items-start gap-3">
+              <AlertTriangle size={18} className="text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-red-800">
+                  {overdueBills.length} conta{overdueBills.length > 1 ? 's vencidas' : ' vencida'}!
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {overdueBills.map(b => (
+                    <li key={b.id} className="text-xs text-red-700 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                      <span className="font-medium truncate">{b.item}</span>
+                      <span className="text-red-500 flex-shrink-0">— {formatCurrency(b.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button onClick={() => setDismissedOverdue(true)} className="text-red-400 hover:text-red-600 transition-colors flex-shrink-0">
+                <ChevronRight size={16} className="rotate-90" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
