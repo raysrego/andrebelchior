@@ -43,7 +43,7 @@ export default function AccessScreen({ onAccess }: Props) {
             <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <LayoutDashboard size={26} className="text-white" />
             </div>
-            <h1 className="text-xl font-bold text-white leading-tight">Sistema Financeiro</h1>
+            <h1 className="text-xl font-bold text-white leading-tight">André Belchior</h1>
             <p className="text-slate-400 text-sm mt-1">Controle de Contas</p>
           </div>
 
