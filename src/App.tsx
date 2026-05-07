@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { LayoutDashboard, FileText, TrendingUp, Building2, BarChart3, Menu, X, CreditCard } from 'lucide-react';
+import { LayoutDashboard, FileText, TrendingUp, Building2, BarChart3, Menu, X, CreditCard, LogOut } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Bills from './components/Bills';
 import IncomeEntries from './components/IncomeEntries';
 import CostCenters from './components/CostCenters';
 import PaymentSources from './components/PaymentSources';
 import Reports from './components/Reports';
+import AccessScreen from './components/AccessScreen';
+
+const SESSION_KEY = 'fin_access';
 
 type Tab = 'dashboard' | 'bills' | 'income' | 'costcenters' | 'paymentsources' | 'reports';
 
@@ -21,12 +24,27 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode; color: string 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [hasAccess, setHasAccess] = useState(() => sessionStorage.getItem(SESSION_KEY) === '1');
 
   const current = NAV_ITEMS.find(n => n.id === activeTab)!;
 
   function navigate(tab: Tab) {
     setActiveTab(tab);
     setSidebarOpen(false);
+  }
+
+  function handleAccess() {
+    sessionStorage.setItem(SESSION_KEY, '1');
+    setHasAccess(true);
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem(SESSION_KEY);
+    setHasAccess(false);
+  }
+
+  if (!hasAccess) {
+    return <AccessScreen onAccess={handleAccess} />;
   }
 
   return (
@@ -71,8 +89,15 @@ export default function App() {
         </nav>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100">
-          <p className="text-xs text-slate-400">Sistema Financeiro v1.0</p>
+        <div className="px-4 py-4 border-t border-slate-100 space-y-2">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all duration-150"
+          >
+            <LogOut size={16} />
+            Sair da Sessão
+          </button>
+          <p className="text-xs text-slate-400 px-3">Sistema Financeiro v1.0</p>
         </div>
       </aside>
 
