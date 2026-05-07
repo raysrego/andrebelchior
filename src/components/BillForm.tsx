@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase, Bill, CostCenter, PaymentSource, Status, Classification, getCurrentMonth, todayLocal } from '../lib/supabase';
-import { X, Check, ExternalLink } from 'lucide-react';
+import { X, Check, ExternalLink, Paperclip } from 'lucide-react';
+import BillAttachments from './BillAttachments';
 
 interface Props {
   bill?: Bill | null;
@@ -28,6 +29,9 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
   const [form, setForm] = useState({ ...emptyForm, reference_month: defaultMonth || getCurrentMonth() });
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
+  // savedBillId: set after the bill is persisted so attachments can be uploaded
+  const [savedBillId, setSavedBillId] = useState<string | null>(bill?.id ?? null);
+  const [saved, setSaved] = useState(!!bill);
 
   useEffect(() => {
     supabase.from('cost_centers').select('*').order('name').then(({ data }) => setCostCenters(data || []));
@@ -36,6 +40,8 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
 
   useEffect(() => {
     if (bill) {
+      setSavedBillId(bill.id);
+      setSaved(true);
       setForm({
         status: bill.status,
         due_date: bill.due_date,
@@ -80,12 +86,19 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
       payment_date: form.status === 'pago' && form.payment_date ? form.payment_date : null,
       updated_at: new Date().toISOString(),
     };
+
     if (bill) {
       await supabase.from('bills').update(payload).eq('id', bill.id);
+      setSavedBillId(bill.id);
     } else {
-      await supabase.from('bills').insert(payload);
+      const { data } = await supabase.from('bills').insert(payload).select('id').single();
+      if (data?.id) setSavedBillId(data.id);
     }
+    setSaved(true);
     onSaved();
+  }
+
+  function handleClose() {
     onClose();
   }
 
@@ -103,10 +116,11 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <h2 className="text-lg font-semibold text-slate-800">{bill ? 'Editar Conta' : 'Nova Conta a Pagar'}</h2>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+          <button onClick={handleClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
             <X size={20} />
           </button>
         </div>
+
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
           {field('Item / Descrição *', <input type="text" value={form.item} onChange={e => setForm(f => ({ ...f, item: e.target.value }))} className={inputClass} placeholder="Nome do item" />)}
           {field('Valor *', <input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className={inputClass} placeholder="0,00" min="0" step="0.01" />)}
@@ -179,7 +193,6 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
                   value={form.payment_source_id}
                   onChange={e => setForm(f => ({ ...f, payment_source_id: e.target.value }))}
                   className="w-full border border-amber-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 text-sm bg-white"
-                  autoFocus
                 >
                   <option value="">— Selecione a fonte pagadora —</option>
                   {paymentSources.map(ps => (
@@ -194,13 +207,40 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
           </div>
         </div>
 
+        {/* Attachments — shown always on edit, shown after save on create */}
+        {saved && savedBillId ? (
+          <div className="px-6 pb-4">
+            <BillAttachments billId={savedBillId} />
+          </div>
+        ) : (
+          <div className="px-6 pb-4">
+            <div className="border border-dashed border-slate-300 rounded-xl bg-slate-50 p-4 flex items-center gap-3">
+              <Paperclip size={16} className="text-slate-400 flex-shrink-0" />
+              <p className="text-xs text-slate-400">Salve a conta primeiro para poder anexar arquivos.</p>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-3 px-6 pb-6">
-          <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-            <Check size={16} /> Salvar
-          </button>
-          <button onClick={onClose} className="flex items-center gap-2 border border-slate-300 text-slate-600 px-5 py-2.5 rounded-lg hover:bg-slate-50 transition-colors font-medium">
-            <X size={16} /> Cancelar
-          </button>
+          {!saved ? (
+            <>
+              <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                <Check size={16} /> Salvar
+              </button>
+              <button onClick={handleClose} className="flex items-center gap-2 border border-slate-300 text-slate-600 px-5 py-2.5 rounded-lg hover:bg-slate-50 transition-colors font-medium">
+                <X size={16} /> Cancelar
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                <Check size={16} /> Salvar alterações
+              </button>
+              <button onClick={handleClose} className="flex items-center gap-2 border border-slate-300 text-slate-600 px-5 py-2.5 rounded-lg hover:bg-slate-50 transition-colors font-medium">
+                <X size={16} /> Fechar
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

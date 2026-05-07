@@ -50,6 +50,7 @@ export type Bill = {
   updated_at?: string;
   cost_centers?: { id: string; name: string } | null;
   payment_sources?: { id: string; name: string } | null;
+  _attachment_count?: number;
 };
 
 export interface IncomeEntry {
@@ -61,6 +62,16 @@ export interface IncomeEntry {
   reference_month: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface BillAttachment {
+  id: string;
+  bill_id: string;
+  file_name: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
 }
 
 export interface MonthlyBalance {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, Bill, CostCenter, PaymentSource, computeStatus, formatCurrency, formatDate, formatMonth, getCurrentMonth, todayLocal } from '../lib/supabase';
-import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink, Bell } from 'lucide-react';
+import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink, Bell, Paperclip } from 'lucide-react';
 import BillForm from './BillForm';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -89,11 +89,21 @@ export default function Bills() {
       if (sources) sourcesMap = new Map(sources.map(s => [s.id, s]));
     }
 
+    // Attachment counts
+    const billIds = billsData.map(b => b.id);
+    const { data: attachCounts } = await supabase
+      .from('bill_attachments')
+      .select('bill_id')
+      .in('bill_id', billIds);
+    const countMap: Record<string, number> = {};
+    (attachCounts || []).forEach(a => { countMap[a.bill_id] = (countMap[a.bill_id] || 0) + 1; });
+
     const updated = billsData.map(b => ({
       ...b,
       cost_centers: centersMap.get(b.cost_center_id) || null,
       payment_sources: sourcesMap.get(b.payment_source_id) || null,
       status: computeStatus(b.due_date, b.status),
+      _attachment_count: countMap[b.id] || 0,
     })) as Bill[];
 
     const toUpdate = updated.filter((b, idx) => b.status !== billsData[idx].status);
@@ -308,6 +318,12 @@ export default function Bills() {
                           <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full" title={(bill.payment_sources as any)?.name || 'Pagamento Externo'}>
                             <ExternalLink size={10} />
                             {(bill.payment_sources as any)?.name || 'Externo'}
+                          </span>
+                        )}
+                        {(bill._attachment_count ?? 0) > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-full" title={`${bill._attachment_count} anexo(s)`}>
+                            <Paperclip size={9} />
+                            {bill._attachment_count}
                           </span>
                         )}
                         {bill.due_date === today && bill.status !== 'pago' && (
