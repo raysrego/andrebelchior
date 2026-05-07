@@ -1,46 +1,52 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, formatCurrency, formatMonth, getCurrentMonth, computeStatus } from '../lib/supabase';
-import { Pencil, Check, X, ChevronRight, TrendingUp, TrendingDown, Wallet, DollarSign, AlertCircle, CreditCard } from 'lucide-react';
+import { Pencil, Check, X, ChevronRight, TrendingUp, TrendingDown, Wallet, DollarSign, AlertCircle, CreditCard, ChevronLeft } from 'lucide-react';
 import MonthDetail from './MonthDetail';
 
 interface MonthData {
   month: string;
   initialBalance: number;
   income: number;
-  personalExpenses: number;  // paid, non-external (affects balance)
-  externalExpenses: number;  // paid, external (all sources combined)
+  personalExpenses: number;
+  externalExpenses: number;
   finalBalance: number;
   sourceBreakdown: Record<string, { name: string; amount: number }>;
 }
 
-function getMonthsRange(): string[] {
-  const current = getCurrentMonth();
-  const [cy, cm] = current.split('-').map(Number);
+const MONTHS_LABELS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function buildRange(year: number, month: number): string[] {
   const months: string[] = [];
   for (let i = 5; i >= 0; i--) {
-    let m = cm - i;
-    let y = cy;
+    let m = month - i;
+    let y = year;
     while (m <= 0) { m += 12; y -= 1; }
     months.push(`${y}-${String(m).padStart(2, '0')}`);
   }
-  let nm = cm + 1, ny = cy;
+  let nm = month + 1, ny = year;
   if (nm > 12) { nm = 1; ny += 1; }
   months.push(`${ny}-${String(nm).padStart(2, '0')}`);
   return months;
 }
 
 export default function Dashboard() {
+  const currentMonthStr = getCurrentMonth();
+  const [cy, cm] = currentMonthStr.split('-').map(Number);
+  const [filterYear, setFilterYear] = useState(cy);
+  const [filterMonth, setFilterMonth] = useState(cm);
+
   const [monthsData, setMonthsData] = useState<MonthData[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingInitial, setEditingInitial] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [detailMonth, setDetailMonth] = useState<string | null>(null);
   const [pendingProjection, setPendingProjection] = useState(0);
-  const currentMonth = getCurrentMonth();
+
+  const selectedMonthStr = `${filterYear}-${String(filterMonth).padStart(2, '0')}`;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const months = getMonthsRange();
+    const months = buildRange(filterYear, filterMonth);
 
     const [
       { data: balancesData },
@@ -57,8 +63,7 @@ export default function Dashboard() {
     ]);
 
     const pendingTotal = (pendingBills || []).reduce((sum, b) => {
-      const s = computeStatus(b.due_date, b.status);
-      return s !== 'pago' ? sum + b.amount : sum;
+      return computeStatus(b.due_date, b.status) !== 'pago' ? sum + b.amount : sum;
     }, 0);
     setPendingProjection(pendingTotal);
 
@@ -69,20 +74,14 @@ export default function Dashboard() {
     (balancesData || []).forEach(b => { balancesMap[b.reference_month] = b.initial_balance; });
 
     const incomeMap: Record<string, number> = {};
-    (entriesData || []).forEach(e => {
-      incomeMap[e.reference_month] = (incomeMap[e.reference_month] || 0) + e.amount;
-    });
+    (entriesData || []).forEach(e => { incomeMap[e.reference_month] = (incomeMap[e.reference_month] || 0) + e.amount; });
 
-    // personalExpensesMap: paid, NOT external
     const personalExpensesMap: Record<string, number> = {};
-    // externalExpensesMap: paid, external (all sources combined)
     const externalExpensesMap: Record<string, number> = {};
-    // sourceBreakdownMap: per month, per source_id
     const sourceBreakdownMap: Record<string, Record<string, number>> = {};
 
     (billsData || []).forEach(b => {
-      const s = computeStatus(b.due_date, b.status);
-      if (s !== 'pago') return;
+      if (computeStatus(b.due_date, b.status) !== 'pago') return;
       if (!b.external_payment) {
         personalExpensesMap[b.reference_month] = (personalExpensesMap[b.reference_month] || 0) + b.amount;
       } else {
@@ -123,21 +122,20 @@ export default function Dashboard() {
       const externalExpenses = externalExpensesMap[month] || 0;
       const finalBalance = initialBalance + income - personalExpenses;
 
-      // Build source breakdown with names
       const rawBreakdown = sourceBreakdownMap[month] || {};
       const sourceBreakdown: Record<string, { name: string; amount: number }> = {};
-      Object.entries(rawBreakdown).forEach(([sourceId, amount]) => {
-        sourceBreakdown[sourceId] = { name: sourcesMap[sourceId] || 'Fonte desconhecida', amount };
+      Object.entries(rawBreakdown).forEach(([sid, amount]) => {
+        sourceBreakdown[sid] = { name: sourcesMap[sid] || 'Fonte desconhecida', amount };
       });
 
       result.push({ month, initialBalance, income, personalExpenses, externalExpenses, finalBalance, sourceBreakdown });
       prevFinal = finalBalance;
     }
 
-    const filtered = result.filter(md => monthsWithEntries.has(md.month) || md.month === currentMonth);
+    const filtered = result.filter(md => monthsWithEntries.has(md.month) || md.month === selectedMonthStr);
     setMonthsData(filtered);
     setLoading(false);
-  }, []);
+  }, [filterYear, filterMonth, selectedMonthStr]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -147,14 +145,41 @@ export default function Dashboard() {
     fetchData();
   }
 
-  const current = monthsData.find(m => m.month === currentMonth);
+  const current = monthsData.find(m => m.month === selectedMonthStr);
   const totalPaidGeneral = current ? current.personalExpenses + current.externalExpenses : 0;
+
+  const yearOptions = Array.from({ length: 5 }, (_, i) => cy - 2 + i);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-        <p className="text-slate-500 mt-1">Visão geral financeira</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
+          <p className="text-slate-500 mt-1">Visão geral financeira</p>
+        </div>
+        {/* Month/Year filter */}
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm">
+          <button onClick={() => {
+            let nm = filterMonth - 1; let ny = filterYear;
+            if (nm < 1) { nm = 12; ny -= 1; }
+            setFilterMonth(nm); setFilterYear(ny);
+          }} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+            <ChevronLeft size={16} className="text-slate-600" />
+          </button>
+          <select value={filterMonth} onChange={e => setFilterMonth(Number(e.target.value))} className="text-sm font-medium text-slate-700 bg-transparent border-none outline-none cursor-pointer">
+            {MONTHS_LABELS.map((l, i) => <option key={i + 1} value={i + 1}>{l}</option>)}
+          </select>
+          <select value={filterYear} onChange={e => setFilterYear(Number(e.target.value))} className="text-sm font-medium text-slate-700 bg-transparent border-none outline-none cursor-pointer">
+            {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button onClick={() => {
+            let nm = filterMonth + 1; let ny = filterYear;
+            if (nm > 12) { nm = 1; ny += 1; }
+            setFilterMonth(nm); setFilterYear(ny);
+          }} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+            <ChevronRight size={16} className="text-slate-600" />
+          </button>
+        </div>
       </div>
 
       {/* Central highlight cards */}
@@ -182,7 +207,7 @@ export default function Dashboard() {
       {/* Current month breakdown */}
       {current && (
         <div className="space-y-4">
-          {/* Row 1: Movimentações Conta Pessoal */}
+          {/* Row 1: Conta Pessoal */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Movimentações Conta Pessoal — {formatMonth(current.month)}</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -195,24 +220,12 @@ export default function Dashboard() {
                   <p className="text-lg font-bold text-slate-800">{formatCurrency(current.initialBalance)}</p>
                   {editingInitial === current.month ? (
                     <div className="flex items-center gap-1 ml-1">
-                      <input
-                        type="number"
-                        value={editValue}
-                        onChange={e => setEditValue(e.target.value)}
-                        className="w-20 text-xs border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        autoFocus
-                      />
-                      <button onClick={() => saveInitialBalance(current.month, parseFloat(editValue) || 0)} className="p-1 bg-emerald-500 text-white rounded hover:bg-emerald-600 transition-colors">
-                        <Check size={10} />
-                      </button>
-                      <button onClick={() => setEditingInitial(null)} className="p-1 border border-slate-300 rounded hover:bg-slate-50 transition-colors">
-                        <X size={10} />
-                      </button>
+                      <input type="number" value={editValue} onChange={e => setEditValue(e.target.value)} className="w-20 text-xs border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500" autoFocus />
+                      <button onClick={() => saveInitialBalance(current.month, parseFloat(editValue) || 0)} className="p-1 bg-emerald-500 text-white rounded hover:bg-emerald-600 transition-colors"><Check size={10} /></button>
+                      <button onClick={() => setEditingInitial(null)} className="p-1 border border-slate-300 rounded hover:bg-slate-50 transition-colors"><X size={10} /></button>
                     </div>
                   ) : (
-                    <button onClick={() => { setEditingInitial(current.month); setEditValue(String(current.initialBalance)); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors">
-                      <Pencil size={13} />
-                    </button>
+                    <button onClick={() => { setEditingInitial(current.month); setEditValue(String(current.initialBalance)); }} className="p-1 text-slate-300 hover:text-blue-500 transition-colors"><Pencil size={13} /></button>
                   )}
                 </div>
               </div>
@@ -240,7 +253,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Row 2: Movimentações Outras Fontes Pagadoras */}
+          {/* Row 2: Outras Fontes Pagadoras */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">Movimentações Outras Fontes Pagadoras — {formatMonth(current.month)}</p>
             {Object.keys(current.sourceBreakdown).length === 0 ? (
@@ -273,45 +286,35 @@ export default function Dashboard() {
             {monthsData.map(md => (
               <div
                 key={md.month}
-                className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer group ${md.month === currentMonth ? 'border-blue-300 ring-1 ring-blue-100' : 'border-slate-200'}`}
+                className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer group ${md.month === selectedMonthStr ? 'border-blue-300 ring-1 ring-blue-100' : 'border-slate-200'}`}
                 onClick={() => setDetailMonth(md.month)}
               >
-                <div className="flex items-center px-6 py-4">
-                  <div className="flex-1">
+                <div className="flex items-center px-4 md:px-6 py-4">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800">{formatMonth(md.month)}</span>
-                      {md.month === currentMonth && (
-                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Atual</span>
+                      <span className="font-semibold text-slate-800 text-sm">{formatMonth(md.month)}</span>
+                      {md.month === selectedMonthStr && (
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium hidden sm:inline">Selecionado</span>
+                      )}
+                      {md.month === getCurrentMonth() && (
+                        <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Atual</span>
                       )}
                     </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-8 text-right">
+                  <div className="hidden md:grid grid-cols-4 gap-8 text-right">
                     <div>
                       <p className="text-xs text-slate-400 mb-0.5">Saldo Inicial</p>
                       <div className="flex items-center justify-end gap-1">
                         <p className="font-semibold text-slate-700 text-sm">{formatCurrency(md.initialBalance)}</p>
-                        <button
-                          onClick={e => { e.stopPropagation(); setEditingInitial(md.month); setEditValue(String(md.initialBalance)); }}
-                          className="p-1 text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-all"
-                        >
+                        <button onClick={e => { e.stopPropagation(); setEditingInitial(md.month); setEditValue(String(md.initialBalance)); }} className="p-1 text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-all">
                           <Pencil size={12} />
                         </button>
                       </div>
                       {editingInitial === md.month && (
                         <div className="flex items-center gap-1 mt-1" onClick={e => e.stopPropagation()}>
-                          <input
-                            type="number"
-                            value={editValue}
-                            onChange={e => setEditValue(e.target.value)}
-                            className="w-24 text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            autoFocus
-                          />
-                          <button onClick={() => saveInitialBalance(md.month, parseFloat(editValue) || 0)} className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors">
-                            <Check size={10} />
-                          </button>
-                          <button onClick={() => setEditingInitial(null)} className="p-1 border border-slate-300 text-slate-500 rounded hover:bg-slate-50 transition-colors">
-                            <X size={10} />
-                          </button>
+                          <input type="number" value={editValue} onChange={e => setEditValue(e.target.value)} className="w-24 text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500" autoFocus />
+                          <button onClick={() => saveInitialBalance(md.month, parseFloat(editValue) || 0)} className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors"><Check size={10} /></button>
+                          <button onClick={() => setEditingInitial(null)} className="p-1 border border-slate-300 text-slate-500 rounded hover:bg-slate-50 transition-colors"><X size={10} /></button>
                         </div>
                       )}
                     </div>
@@ -321,10 +324,25 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <p className="text-xs text-slate-400 mb-0.5">Despesas Pagas</p>
-                      <p className="font-semibold text-red-600 text-sm">{formatCurrency(md.personalExpenses + md.externalExpenses)}</p>
+                      <p className={`font-semibold text-sm ${(md.personalExpenses + md.externalExpenses) > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                        {formatCurrency(md.personalExpenses + md.externalExpenses)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-400 mb-0.5">Saldo Final</p>
+                      <p className={`font-bold text-sm ${md.finalBalance >= 0 ? 'text-slate-800' : 'text-orange-600'}`}>{formatCurrency(md.finalBalance)}</p>
+                    </div>
+                  </div>
+                  {/* Mobile compact view */}
+                  <div className="md:hidden flex items-center gap-4 text-right">
+                    <div>
+                      <p className="text-xs text-slate-400">Despesas</p>
+                      <p className={`font-semibold text-sm ${(md.personalExpenses + md.externalExpenses) > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                        {formatCurrency(md.personalExpenses + md.externalExpenses)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400">Saldo Final</p>
                       <p className={`font-bold text-sm ${md.finalBalance >= 0 ? 'text-slate-800' : 'text-orange-600'}`}>{formatCurrency(md.finalBalance)}</p>
                     </div>
                   </div>

@@ -45,6 +45,7 @@ export type Bill = {
   external_payment: boolean;
   external_payment_description: string;
   payment_source_id: string | null;
+  payment_date: string | null;
   created_at?: string;
   updated_at?: string;
   cost_centers?: { id: string; name: string } | null;

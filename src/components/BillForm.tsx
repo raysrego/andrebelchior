@@ -21,6 +21,7 @@ const emptyForm = {
   external_payment: false,
   external_payment_description: '',
   payment_source_id: '',
+  payment_date: '',
 };
 
 export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props) {
@@ -47,9 +48,20 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
         external_payment: bill.external_payment ?? false,
         external_payment_description: bill.external_payment_description ?? '',
         payment_source_id: bill.payment_source_id || '',
+        payment_date: bill.payment_date || '',
       });
     }
   }, [bill]);
+
+  function handleStatusChange(newStatus: Status) {
+    setForm(f => ({
+      ...f,
+      status: newStatus,
+      payment_date: newStatus === 'pago' && !f.payment_date
+        ? new Date().toISOString().split('T')[0]
+        : newStatus !== 'pago' ? '' : f.payment_date,
+    }));
+  }
 
   async function handleSave() {
     if (!form.item.trim() || !form.due_date || !form.amount) return;
@@ -65,6 +77,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
       external_payment: form.external_payment,
       external_payment_description: form.external_payment ? form.external_payment_description : '',
       payment_source_id: form.external_payment && form.payment_source_id ? form.payment_source_id : null,
+      payment_date: form.status === 'pago' && form.payment_date ? form.payment_date : null,
       updated_at: new Date().toISOString(),
     };
     if (bill) {
@@ -102,11 +115,19 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
             <input type="month" value={form.reference_month} onChange={e => setForm(f => ({ ...f, reference_month: e.target.value }))} className={inputClass} />
           ))}
           {field('Status', (
-            <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as Status }))} className={inputClass}>
+            <select value={form.status} onChange={e => handleStatusChange(e.target.value as Status)} className={inputClass}>
               <option value="aberto">Aberto</option>
               <option value="pago">Pago</option>
               <option value="vencido">Vencido</option>
             </select>
+          ))}
+          {form.status === 'pago' && field('Data de Pagamento', (
+            <input
+              type="date"
+              value={form.payment_date}
+              onChange={e => setForm(f => ({ ...f, payment_date: e.target.value }))}
+              className="w-full border border-emerald-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm bg-emerald-50"
+            />
           ))}
           {field('Classificação', (
             <select value={form.classification} onChange={e => setForm(f => ({ ...f, classification: e.target.value as Classification }))} className={inputClass}>
@@ -124,7 +145,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
           {field('Dado Bancário', <input type="text" value={form.bank_info} onChange={e => setForm(f => ({ ...f, bank_info: e.target.value }))} className={inputClass} placeholder="Banco / Conta / Pix" />)}
         </div>
 
-        {/* External payment section — full width */}
+        {/* External payment section */}
         <div className="px-6 pb-4">
           <div className={`border rounded-xl p-4 transition-colors ${form.external_payment ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
             <label className="flex items-center gap-3 cursor-pointer select-none">
