@@ -96,6 +96,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
     }
     setSaved(true);
     onSaved();
+    onClose();
   }
 
   function handleClose() {
