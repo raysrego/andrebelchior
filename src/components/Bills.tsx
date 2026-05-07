@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase, Bill, CostCenter, PaymentSource, computeStatus, formatCurrency, formatDate, formatMonth, getCurrentMonth } from '../lib/supabase';
+import { supabase, Bill, CostCenter, PaymentSource, computeStatus, formatCurrency, formatDate, formatMonth, getCurrentMonth, todayLocal } from '../lib/supabase';
 import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink, Bell } from 'lucide-react';
 import BillForm from './BillForm';
 
@@ -33,9 +33,6 @@ function nextMonth(ym: string): string {
   return `${y}-${String(m + 1).padStart(2, '0')}`;
 }
 
-function todayStr(): string {
-  return new Date().toISOString().split('T')[0];
-}
 
 export default function Bills() {
   const [bills, setBills] = useState<Bill[]>([]);
@@ -119,7 +116,7 @@ export default function Bills() {
   async function handleReplicate(bill: Bill) {
     const nm = nextMonth(bill.reference_month);
     const [y, m] = nm.split('-').map(Number);
-    const dueDay = new Date(bill.due_date).getDate();
+    const dueDay = parseInt(bill.due_date.split('-')[2], 10);
     const newDue = `${y}-${String(m).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
     await supabase.from('bills').insert({
       status: 'aberto',
@@ -157,7 +154,7 @@ export default function Bills() {
   const paid = bills.filter(b => b.status === 'pago').reduce((s, b) => s + b.amount, 0);
   const pending = bills.filter(b => b.status !== 'pago').reduce((s, b) => s + b.amount, 0);
 
-  const today = todayStr();
+  const today = todayLocal();
   const dueTodayBills = bills.filter(b => b.due_date === today && b.status !== 'pago');
 
   useEffect(() => { setPage(1); }, [filterStatus, filterCostCenter, filterPaymentSource, month]);

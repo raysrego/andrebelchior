@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase, Bill, CostCenter, PaymentSource, Status, Classification, getCurrentMonth } from '../lib/supabase';
+import { supabase, Bill, CostCenter, PaymentSource, Status, Classification, getCurrentMonth, todayLocal } from '../lib/supabase';
 import { X, Check, ExternalLink } from 'lucide-react';
 
 interface Props {
@@ -58,7 +58,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
       ...f,
       status: newStatus,
       payment_date: newStatus === 'pago' && !f.payment_date
-        ? new Date().toISOString().split('T')[0]
+        ? todayLocal()
         : newStatus !== 'pago' ? '' : f.payment_date,
     }));
   }
