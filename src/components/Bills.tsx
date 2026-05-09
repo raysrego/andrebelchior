@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, Bill, CostCenter, PaymentSource, computeStatus, formatCurrency, formatDate, formatMonth, getCurrentMonth, todayLocal } from '../lib/supabase';
-import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink, Bell, Paperclip, AlertTriangle, CopyCheck } from 'lucide-react';
+import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink, Bell, Paperclip, AlertTriangle, CopyCheck, Search } from 'lucide-react';
 import BillForm from './BillForm';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -45,6 +45,7 @@ export default function Bills() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCostCenter, setFilterCostCenter] = useState('');
   const [filterPaymentSource, setFilterPaymentSource] = useState('');
+  const [filterName, setFilterName] = useState('');
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
   const [dismissedAlert, setDismissedAlert] = useState(false);
@@ -187,6 +188,7 @@ export default function Bills() {
       filtered = filtered.filter(b => b.payment_source_id === filterPaymentSource);
     }
   }
+  if (filterName) filtered = filtered.filter(b => b.item.toLowerCase().includes(filterName.toLowerCase()));
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -199,7 +201,7 @@ export default function Bills() {
   const overdueBills = bills.filter(b => b.status === 'vencido');
 
   useEffect(() => { setPage(1); setDismissedAlert(false); setDismissedOverdue(false); }, [month]);
-  useEffect(() => { setPage(1); }, [filterStatus, filterCostCenter, filterPaymentSource]);
+  useEffect(() => { setPage(1); }, [filterStatus, filterCostCenter, filterPaymentSource, filterName]);
 
   return (
     <div className="space-y-4">
@@ -314,6 +316,19 @@ export default function Bills() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Buscar por item</label>
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={filterName}
+                onChange={e => setFilterName(e.target.value)}
+                placeholder="Nome do item..."
+                className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Todos</option>
@@ -337,17 +352,17 @@ export default function Bills() {
               {paymentSources.map(ps => <option key={ps.id} value={ps.id}>{ps.name}</option>)}
             </select>
           </div>
-          <div className="flex items-end">
-            {(filterStatus || filterCostCenter || filterPaymentSource) && (
-              <button
-                onClick={() => { setFilterStatus(''); setFilterCostCenter(''); setFilterPaymentSource(''); }}
-                className="w-full border border-slate-300 text-slate-600 px-3 py-2 rounded-lg text-sm hover:bg-slate-50 transition-colors"
-              >
-                Limpar filtros
-              </button>
-            )}
-          </div>
         </div>
+        {(filterName || filterStatus || filterCostCenter || filterPaymentSource) && (
+          <div className="mt-3 flex justify-end">
+            <button
+              onClick={() => { setFilterName(''); setFilterStatus(''); setFilterCostCenter(''); setFilterPaymentSource(''); }}
+              className="border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg text-sm hover:bg-slate-50 transition-colors"
+            >
+              Limpar filtros
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Summary cards */}
