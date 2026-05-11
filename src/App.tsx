@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LayoutDashboard, FileText, TrendingUp, Building2, BarChart3, Menu, X, CreditCard, LogOut, Wallet } from 'lucide-react';
+import { supabase } from './lib/supabase';
 import Dashboard from './components/Dashboard';
 import Bills from './components/Bills';
 import IncomeEntries from './components/IncomeEntries';
@@ -8,8 +9,6 @@ import PaymentSources from './components/PaymentSources';
 import Reports from './components/Reports';
 import AccessScreen from './components/AccessScreen';
 import RosimarModule from './components/rosimar/RosimarModule';
-
-const SESSION_KEY = 'fin_access';
 
 type Tab = 'dashboard' | 'bills' | 'income' | 'costcenters' | 'paymentsources' | 'reports' | 'rosimar';
 
@@ -26,7 +25,19 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode; color: string 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [hasAccess, setHasAccess] = useState(() => sessionStorage.getItem(SESSION_KEY) === '1');
+  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setHasAccess(!!data.session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setHasAccess(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const current = NAV_ITEMS.find(n => n.id === activeTab)!;
 
@@ -36,34 +47,24 @@ export default function App() {
   }
 
   function handleAccess() {
-    sessionStorage.setItem(SESSION_KEY, '1');
     setHasAccess(true);
   }
 
-  function handleLogout() {
-    sessionStorage.removeItem(SESSION_KEY);
+  async function handleLogout() {
+    await supabase.auth.signOut();
     setHasAccess(false);
+  }
+
+  if (hasAccess === null) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+      </div>
+    );
   }
 
   if (!hasAccess) {
     return <AccessScreen onAccess={handleAccess} />;
-  }
-
-  if (activeTab === 'rosimar') {
-    return (
-      <div>
-        <div className="fixed top-0 left-0 z-50">
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className="m-3 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50 shadow-sm transition-colors flex items-center gap-1.5"
-          >
-            <LayoutDashboard size={14} />
-            Voltar ao sistema
-          </button>
-        </div>
-        <RosimarModule />
-      </div>
-    );
   }
 
   return (
@@ -142,7 +143,7 @@ export default function App() {
             {activeTab === 'costcenters' && <CostCenters />}
             {activeTab === 'paymentsources' && <PaymentSources />}
             {activeTab === 'reports' && <Reports />}
-            {activeTab === 'rosimar' && null}
+            {activeTab === 'rosimar' && <RosimarModule />}
           </div>
         </main>
       </div>
