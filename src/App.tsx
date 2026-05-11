@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LayoutDashboard, FileText, TrendingUp, Building2, BarChart3, Menu, X, CreditCard, LogOut } from 'lucide-react';
+import { LayoutDashboard, FileText, TrendingUp, Building2, BarChart3, Menu, X, CreditCard, LogOut, Wallet } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Bills from './components/Bills';
 import IncomeEntries from './components/IncomeEntries';
@@ -7,10 +7,11 @@ import CostCenters from './components/CostCenters';
 import PaymentSources from './components/PaymentSources';
 import Reports from './components/Reports';
 import AccessScreen from './components/AccessScreen';
+import RosimarModule from './components/rosimar/RosimarModule';
 
 const SESSION_KEY = 'fin_access';
 
-type Tab = 'dashboard' | 'bills' | 'income' | 'costcenters' | 'paymentsources' | 'reports';
+type Tab = 'dashboard' | 'bills' | 'income' | 'costcenters' | 'paymentsources' | 'reports' | 'rosimar';
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode; color: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, color: 'text-slate-600' },
@@ -19,6 +20,7 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode; color: string 
   { id: 'costcenters', label: 'Centros de Custo', icon: <Building2 size={20} />, color: 'text-orange-600' },
   { id: 'paymentsources', label: 'Fontes Pagadoras', icon: <CreditCard size={20} />, color: 'text-amber-600' },
   { id: 'reports', label: 'Relatórios', icon: <BarChart3 size={20} />, color: 'text-teal-600' },
+  { id: 'rosimar', label: 'Rosimar', icon: <Wallet size={20} />, color: 'text-rose-600' },
 ];
 
 export default function App() {
@@ -45,6 +47,23 @@ export default function App() {
 
   if (!hasAccess) {
     return <AccessScreen onAccess={handleAccess} />;
+  }
+
+  if (activeTab === 'rosimar') {
+    return (
+      <div>
+        <div className="fixed top-0 left-0 z-50">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className="m-3 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50 shadow-sm transition-colors flex items-center gap-1.5"
+          >
+            <LayoutDashboard size={14} />
+            Voltar ao sistema
+          </button>
+        </div>
+        <RosimarModule />
+      </div>
+    );
   }
 
   return (
@@ -123,6 +142,7 @@ export default function App() {
             {activeTab === 'costcenters' && <CostCenters />}
             {activeTab === 'paymentsources' && <PaymentSources />}
             {activeTab === 'reports' && <Reports />}
+            {activeTab === 'rosimar' && null}
           </div>
         </main>
       </div>
