@@ -19,7 +19,7 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode; color: string 
   { id: 'costcenters', label: 'Centros de Custo', icon: <Building2 size={20} />, color: 'text-orange-600' },
   { id: 'paymentsources', label: 'Fontes Pagadoras', icon: <CreditCard size={20} />, color: 'text-amber-600' },
   { id: 'reports', label: 'Relatórios', icon: <BarChart3 size={20} />, color: 'text-teal-600' },
-  { id: 'rosimar', label: 'Rosimar', icon: <Wallet size={20} />, color: 'text-rose-600' },
+  { id: 'rosimar', label: 'PP Uno', icon: <Wallet size={20} />, color: 'text-rose-600' },
 ];
 
 export default function App() {

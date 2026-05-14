@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase, formatCurrency, formatDate, todayLocal, getCurrentMonth, formatMonth } from '../../lib/supabase';
-import { Plus, X, Check, ChevronLeft, ChevronRight, Paperclip, Eye, AlertTriangle, Clock, Trash2, CreditCard as Edit2, Copy, Download, FileText } from 'lucide-react';
+import { Plus, X, Check, ChevronLeft, ChevronRight, Paperclip, Eye, AlertTriangle, Clock, Trash2, CreditCard as Edit2, Copy, FileText, Search } from 'lucide-react';
 
 type PaymentStatus = 'pendente' | 'pago';
 
@@ -55,12 +55,20 @@ export default function RosimarPayments() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
-  const [initialBalance, setInitialBalance] = useState('');
   const [attachmentPaymentId, setAttachmentPaymentId] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [replicating, setReplicating] = useState(false);
+
+  // Pay modal state
+  const [payModalId, setPayModalId] = useState<string | null>(null);
+  const [payDate, setPayDate] = useState('');
+
+  // Filters
+  const [filterDueDate, setFilterDueDate] = useState('');
+  const [filterName, setFilterName] = useState('');
+
   const today = todayLocal();
 
   useEffect(() => {
@@ -86,12 +94,15 @@ export default function RosimarPayments() {
   // KPIs
   const totalPaid = payments.filter(p => p.status === 'pago').reduce((s, p) => s + p.amount, 0);
   const totalPending = payments.filter(p => p.status === 'pendente').reduce((s, p) => s + p.amount, 0);
-  const ib = parseFloat(initialBalance) || 0;
-  const finalBalance = ib - totalPaid;
 
   // Alerts
   const dueToday = payments.filter(p => p.status === 'pendente' && p.due_date === today);
   const overdue = payments.filter(p => p.status === 'pendente' && p.due_date < today);
+
+  // Filtered list
+  let filtered = payments;
+  if (filterDueDate) filtered = filtered.filter(p => p.due_date === filterDueDate);
+  if (filterName) filtered = filtered.filter(p => p.item.toLowerCase().includes(filterName.toLowerCase()));
 
   function prevMonthNav() {
     const [y, m] = month.split('-').map(Number);
@@ -168,15 +179,37 @@ export default function RosimarPayments() {
     loadPayments();
   }
 
-  async function togglePaid(p: Payment) {
+  function openPayModal(p: Payment) {
+    if (p.status === 'pago') {
+      // Toggle back to pendente directly
+      markPendente(p);
+      return;
+    }
+    setPayDate(today);
+    setPayModalId(p.id);
+  }
+
+  async function markPendente(p: Payment) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const newStatus: PaymentStatus = p.status === 'pago' ? 'pendente' : 'pago';
     await supabase
       .from('rosimar_payments')
-      .update({ status: newStatus, paid_at: newStatus === 'pago' ? today : null })
+      .update({ status: 'pendente', paid_at: null })
       .eq('id', p.id)
       .eq('user_id', user.id);
+    loadPayments();
+  }
+
+  async function confirmPay() {
+    if (!payModalId) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase
+      .from('rosimar_payments')
+      .update({ status: 'pago', paid_at: payDate || today })
+      .eq('id', payModalId)
+      .eq('user_id', user.id);
+    setPayModalId(null);
     loadPayments();
   }
 
@@ -264,6 +297,8 @@ export default function RosimarPayments() {
     return { label: 'Pendente', cls: 'bg-slate-100 text-slate-600' };
   }
 
+  const hasFilters = filterDueDate || filterName;
+
   return (
     <div className="space-y-6">
       {/* Month navigator */}
@@ -323,52 +358,77 @@ export default function RosimarPayments() {
       )}
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 p-5">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Saldo Inicial</p>
-          <input
-            type="number"
-            value={initialBalance}
-            onChange={e => setInitialBalance(e.target.value)}
-            placeholder="0,00"
-            className="text-2xl font-bold text-slate-800 w-full outline-none bg-transparent placeholder-slate-300"
-          />
-          <p className="text-xs text-slate-400 mt-1">Clique para editar</p>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200 p-5">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Despesas Pagas</p>
           <p className="text-2xl font-bold text-red-600">{formatCurrency(totalPaid)}</p>
           <p className="text-xs text-slate-400 mt-1">{payments.filter(p => p.status === 'pago').length} lançamento(s)</p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 p-5">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Saldo Final</p>
-          <p className={`text-2xl font-bold ${finalBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-            {formatCurrency(finalBalance)}
-          </p>
-          <p className="text-xs text-slate-400 mt-1">Pendente: {formatCurrency(totalPending)}</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Pendente</p>
+          <p className="text-2xl font-bold text-amber-600">{formatCurrency(totalPending)}</p>
+          <p className="text-xs text-slate-400 mt-1">{payments.filter(p => p.status === 'pendente').length} lançamento(s)</p>
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Buscar por nome</label>
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={filterName}
+                onChange={e => setFilterName(e.target.value)}
+                placeholder="Nome do item..."
+                className="w-full border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-slate-800 transition-colors"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Filtrar por vencimento</label>
+            <input
+              type="date"
+              value={filterDueDate}
+              onChange={e => setFilterDueDate(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-slate-800 transition-colors"
+            />
+          </div>
+        </div>
+        {hasFilters && (
+          <div className="mt-3 flex justify-end">
+            <button
+              onClick={() => { setFilterName(''); setFilterDueDate(''); }}
+              className="border border-slate-200 text-slate-600 px-3 py-1.5 rounded-xl text-sm hover:bg-slate-50 transition-colors"
+            >
+              Limpar filtros
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Payments list */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <h2 className="font-semibold text-slate-800">Lançamentos</h2>
-          <span className="text-sm text-slate-500">{payments.length} item(s)</span>
+          <span className="text-sm text-slate-500">{filtered.length} item(s)</span>
         </div>
 
         {loading ? (
           <div className="py-16 text-center text-slate-400 text-sm">Carregando...</div>
-        ) : payments.length === 0 ? (
-          <div className="py-16 text-center text-slate-400 text-sm">Nenhum lançamento neste mês.</div>
+        ) : filtered.length === 0 ? (
+          <div className="py-16 text-center text-slate-400 text-sm">Nenhum lançamento encontrado.</div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {payments.map(p => {
+            {filtered.map(p => {
               const { label, cls } = statusLabel(p);
               return (
                 <div key={p.id} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
                   {/* Check button */}
                   <button
-                    onClick={() => togglePaid(p)}
+                    onClick={() => openPayModal(p)}
                     className={`w-8 h-8 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
                       p.status === 'pago'
                         ? 'bg-emerald-500 border-emerald-500 text-white'
@@ -391,6 +451,7 @@ export default function RosimarPayments() {
                     )}
                     <div className="flex items-center gap-3 mt-1 flex-wrap">
                       <span className="text-xs text-slate-400">Venc: {formatDate(p.due_date)}</span>
+                      {p.paid_at && <span className="text-xs text-emerald-600">Pago em: {formatDate(p.paid_at)}</span>}
                       {p.bank_info && <span className="text-xs text-slate-400 truncate max-w-[160px]">Banco: {p.bank_info}</span>}
                       {p.observation && <span className="text-xs text-slate-400 truncate max-w-[160px]">Obs: {p.observation}</span>}
                     </div>
@@ -431,6 +492,46 @@ export default function RosimarPayments() {
           </div>
         )}
       </div>
+
+      {/* Pay date modal */}
+      {payModalId && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800">Dar baixa como pago</h3>
+              <button onClick={() => setPayModalId(null)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Data de pagamento</label>
+                <input
+                  type="date"
+                  value={payDate}
+                  onChange={e => setPayDate(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 text-slate-800 text-sm focus:outline-none focus:border-slate-800 transition-colors"
+                />
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3 justify-end">
+              <button
+                onClick={() => setPayModalId(null)}
+                className="px-5 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmPay}
+                disabled={!payDate}
+                className="px-5 py-2.5 text-sm font-semibold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Form Modal */}
       {showForm && (
@@ -548,7 +649,6 @@ export default function RosimarPayments() {
             </div>
 
             <div className="px-6 py-5 space-y-4">
-              {/* Upload */}
               <div
                 onClick={() => fileInputRef.current?.click()}
                 className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center cursor-pointer hover:border-slate-500 hover:bg-slate-50 transition-colors"
@@ -567,7 +667,6 @@ export default function RosimarPayments() {
                 accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
               />
 
-              {/* List */}
               {attachments.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-4">Nenhum anexo ainda.</p>
               ) : (

@@ -46,6 +46,8 @@ export default function Bills() {
   const [filterCostCenter, setFilterCostCenter] = useState('');
   const [filterPaymentSource, setFilterPaymentSource] = useState('');
   const [filterName, setFilterName] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
   const [dismissedAlert, setDismissedAlert] = useState(false);
@@ -189,6 +191,8 @@ export default function Bills() {
     }
   }
   if (filterName) filtered = filtered.filter(b => b.item.toLowerCase().includes(filterName.toLowerCase()));
+  if (filterDateFrom) filtered = filtered.filter(b => b.due_date >= filterDateFrom);
+  if (filterDateTo) filtered = filtered.filter(b => b.due_date <= filterDateTo);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -201,7 +205,7 @@ export default function Bills() {
   const overdueBills = bills.filter(b => b.status === 'vencido');
 
   useEffect(() => { setPage(1); setDismissedAlert(false); setDismissedOverdue(false); }, [month]);
-  useEffect(() => { setPage(1); }, [filterStatus, filterCostCenter, filterPaymentSource, filterName]);
+  useEffect(() => { setPage(1); }, [filterStatus, filterCostCenter, filterPaymentSource, filterName, filterDateFrom, filterDateTo]);
 
   return (
     <div className="space-y-4">
@@ -314,7 +318,7 @@ export default function Bills() {
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Buscar por item</label>
             <div className="relative">
@@ -352,11 +356,29 @@ export default function Bills() {
               {paymentSources.map(ps => <option key={ps.id} value={ps.id}>{ps.name}</option>)}
             </select>
           </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Vencimento de</label>
+            <input
+              type="date"
+              value={filterDateFrom}
+              onChange={e => setFilterDateFrom(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Vencimento até</label>
+            <input
+              type="date"
+              value={filterDateTo}
+              onChange={e => setFilterDateTo(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
         </div>
-        {(filterName || filterStatus || filterCostCenter || filterPaymentSource) && (
+        {(filterName || filterStatus || filterCostCenter || filterPaymentSource || filterDateFrom || filterDateTo) && (
           <div className="mt-3 flex justify-end">
             <button
-              onClick={() => { setFilterName(''); setFilterStatus(''); setFilterCostCenter(''); setFilterPaymentSource(''); }}
+              onClick={() => { setFilterName(''); setFilterStatus(''); setFilterCostCenter(''); setFilterPaymentSource(''); setFilterDateFrom(''); setFilterDateTo(''); }}
               className="border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg text-sm hover:bg-slate-50 transition-colors"
             >
               Limpar filtros
