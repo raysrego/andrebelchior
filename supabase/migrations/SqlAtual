@@ -1,0 +1,96 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.bill_attachments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  bill_id uuid NOT NULL,
+  file_name text NOT NULL,
+  storage_path text NOT NULL,
+  mime_type text NOT NULL DEFAULT ''::text,
+  size_bytes bigint NOT NULL DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  type text NOT NULL DEFAULT 'boleto'::text CHECK (type = ANY (ARRAY['boleto'::text, 'comprovante'::text])),
+  CONSTRAINT bill_attachments_pkey PRIMARY KEY (id),
+  CONSTRAINT bill_attachments_bill_id_fkey FOREIGN KEY (bill_id) REFERENCES public.bills(id)
+);
+CREATE TABLE public.bills (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  status text NOT NULL DEFAULT 'aberto'::text CHECK (status = ANY (ARRAY['aberto'::text, 'pago'::text, 'vencido'::text])),
+  due_date date NOT NULL,
+  item text NOT NULL,
+  amount numeric NOT NULL DEFAULT 0,
+  cost_center_id uuid,
+  classification text NOT NULL DEFAULT 'fixo'::text CHECK (classification = ANY (ARRAY['fixo'::text, 'fixo_variavel'::text, 'extra'::text])),
+  bank_info text DEFAULT ''::text,
+  reference_month text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  external_payment boolean NOT NULL DEFAULT false,
+  external_payment_description text NOT NULL DEFAULT ''::text,
+  payment_source_id uuid,
+  payment_date date,
+  CONSTRAINT bills_pkey PRIMARY KEY (id),
+  CONSTRAINT bills_cost_center_id_fkey FOREIGN KEY (cost_center_id) REFERENCES public.cost_centers(id),
+  CONSTRAINT bills_payment_source_id_fkey FOREIGN KEY (payment_source_id) REFERENCES public.payment_sources(id)
+);
+CREATE TABLE public.cost_centers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  description text DEFAULT ''::text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT cost_centers_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.income_entries (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  description text NOT NULL,
+  amount numeric NOT NULL DEFAULT 0,
+  date date NOT NULL,
+  origin text DEFAULT ''::text,
+  reference_month text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT income_entries_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.monthly_balances (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  reference_month text NOT NULL UNIQUE,
+  initial_balance numeric NOT NULL DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT monthly_balances_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.payment_sources (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT payment_sources_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.rosimar_attachments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  payment_id uuid NOT NULL,
+  file_name text NOT NULL DEFAULT ''::text,
+  storage_path text NOT NULL DEFAULT ''::text,
+  mime_type text NOT NULL DEFAULT ''::text,
+  size_bytes bigint NOT NULL DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT rosimar_attachments_pkey PRIMARY KEY (id),
+  CONSTRAINT rosimar_attachments_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES public.rosimar_payments(id)
+);
+CREATE TABLE public.rosimar_payments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  due_date date NOT NULL,
+  item text NOT NULL DEFAULT ''::text,
+  description text NOT NULL DEFAULT ''::text,
+  bank_info text NOT NULL DEFAULT ''::text,
+  observation text NOT NULL DEFAULT ''::text,
+  amount numeric NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'pendente'::text CHECK (status = ANY (ARRAY['pendente'::text, 'pago'::text])),
+  paid_at date,
+  reference_month text NOT NULL DEFAULT ''::text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT rosimar_payments_pkey PRIMARY KEY (id),
+  CONSTRAINT rosimar_payments_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
