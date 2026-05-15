@@ -199,6 +199,8 @@ export default function Bills() {
   const total = bills.reduce((s, b) => s + b.amount, 0);
   const paid = bills.filter(b => b.status === 'pago').reduce((s, b) => s + b.amount, 0);
   const pending = bills.filter(b => b.status !== 'pago').reduce((s, b) => s + b.amount, 0);
+  const filteredTotal = filtered.reduce((s, b) => s + b.amount, 0);
+  const hasActiveFilter = !!(filterName || filterStatus || filterCostCenter || filterPaymentSource || filterDateFrom || filterDateTo);
 
   const today = todayLocal();
   const dueTodayBills = bills.filter(b => b.due_date === today && b.status !== 'pago');
@@ -494,6 +496,19 @@ export default function Bills() {
                   </tr>
                 ))}
               </tbody>
+              {hasActiveFilter && (
+                <tfoot>
+                  <tr className="bg-slate-50 border-t-2 border-slate-300">
+                    <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-slate-600 text-right">
+                      Total filtrado ({filtered.length} {filtered.length === 1 ? 'item' : 'itens'}):
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-800 text-base">
+                      {formatCurrency(filteredTotal)}
+                    </td>
+                    <td colSpan={4} />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
           {totalPages > 1 && (
