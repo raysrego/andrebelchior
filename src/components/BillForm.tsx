@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase, Bill, CostCenter, PaymentSource, Status, Classification, getCurrentMonth, todayLocal } from '../lib/supabase';
-import { X, Check, ExternalLink, Paperclip } from 'lucide-react';
-import BillAttachments from './BillAttachments';
+import { X, Check, ExternalLink, Paperclip, Upload, Trash2, FileText, Receipt } from 'lucide-react';
 
 interface Props {
   bill?: Bill | null;
@@ -25,13 +24,26 @@ const emptyForm = {
   payment_date: '',
 };
 
+// Interface para anexo (com tipo)
+interface BillAttachment {
+  id: string;
+  file_name: string;
+  storage_path: string;
+  type: 'boleto' | 'comprovante';
+  created_at: string;
+}
+
 export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props) {
   const [form, setForm] = useState({ ...emptyForm, reference_month: defaultMonth || getCurrentMonth() });
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
-  // savedBillId: set after the bill is persisted so attachments can be uploaded
   const [savedBillId, setSavedBillId] = useState<string | null>(bill?.id ?? null);
   const [saved, setSaved] = useState(!!bill);
+
+  // Anexos separados
+  const [boletos, setBoletos] = useState<BillAttachment[]>([]);
+  const [comprovantes, setComprovantes] = useState<BillAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     supabase.from('cost_centers').select('*').order('name').then(({ data }) => setCostCenters(data || []));
@@ -56,8 +68,93 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
         payment_source_id: bill.payment_source_id || '',
         payment_date: bill.payment_date || '',
       });
+      loadAttachments(bill.id);
     }
   }, [bill]);
+
+  async function loadAttachments(billId: string) {
+    const { data, error } = await supabase
+      .from('bill_attachments')
+      .select('*')
+      .eq('bill_id', billId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Erro ao carregar anexos:', error);
+      return;
+    }
+    const boletosList = data?.filter(a => a.type === 'boleto') || [];
+    const comprovantesList = data?.filter(a => a.type === 'comprovante') || [];
+    setBoletos(boletosList);
+    setComprovantes(comprovantesList);
+  }
+
+  async function handleFileUpload(files: FileList | null, type: 'boleto' | 'comprovante') {
+    if (!files || files.length === 0) return;
+    if (!savedBillId) {
+      alert('Salve a conta primeiro antes de anexar arquivos.');
+      return;
+    }
+    setUploading(true);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const storagePath = `bills/${savedBillId}/${type}/${fileName}`;
+
+        // Upload para o Storage do Supabase
+        const { error: uploadError } = await supabase.storage
+          .from('bill-attachments') // Bucket já deve existir
+          .upload(storagePath, file);
+        if (uploadError) throw uploadError;
+
+        // Inserir registro na tabela bill_attachments
+        const { error: dbError } = await supabase.from('bill_attachments').insert({
+          bill_id: savedBillId,
+          file_name: file.name,
+          storage_path: storagePath,
+          mime_type: file.type,
+          size_bytes: file.size,
+          type: type,
+        });
+        if (dbError) throw dbError;
+      }
+      await loadAttachments(savedBillId);
+    } catch (error) {
+      console.error('Erro no upload:', error);
+      alert('Falha ao enviar arquivo. Verifique o bucket Storage e as permissões.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDeleteAttachment(attachment: BillAttachment) {
+    if (!confirm(`Remover ${attachment.file_name}?`)) return;
+    try {
+      // Remover do Storage
+      const { error: storageError } = await supabase.storage
+        .from('bill-attachments')
+        .remove([attachment.storage_path]);
+      if (storageError) throw storageError;
+
+      // Remover do banco
+      const { error: dbError } = await supabase
+        .from('bill_attachments')
+        .delete()
+        .eq('id', attachment.id);
+      if (dbError) throw dbError;
+
+      // Atualizar estado local
+      if (attachment.type === 'boleto') {
+        setBoletos(prev => prev.filter(a => a.id !== attachment.id));
+      } else {
+        setComprovantes(prev => prev.filter(a => a.id !== attachment.id));
+      }
+    } catch (error) {
+      console.error('Erro ao deletar:', error);
+      alert('Não foi possível remover o anexo.');
+    }
+  }
 
   function handleStatusChange(newStatus: Status) {
     setForm(f => ({
@@ -87,12 +184,14 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
       updated_at: new Date().toISOString(),
     };
 
+    let billId = savedBillId;
     if (bill) {
       await supabase.from('bills').update(payload).eq('id', bill.id);
-      setSavedBillId(bill.id);
+      billId = bill.id;
     } else {
       const { data } = await supabase.from('bills').insert(payload).select('id').single();
-      if (data?.id) setSavedBillId(data.id);
+      billId = data?.id;
+      if (billId) setSavedBillId(billId);
     }
     setSaved(true);
     onSaved();
@@ -111,6 +210,62 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
   );
 
   const inputClass = "w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm";
+
+  // Componente interno para exibir área de upload de anexos por tipo
+  const AttachmentSection = ({ type, title, icon, attachments }: { type: 'boleto' | 'comprovante', title: string, icon: React.ReactNode, attachments: BillAttachment[] }) => (
+    <div className="border rounded-xl p-4 bg-white">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          {icon}
+          <h3 className="font-medium text-slate-700">{title}</h3>
+        </div>
+        {savedBillId && (
+          <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+            <Upload size={14} />
+            <span>Upload</span>
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              accept="image/*,application/pdf"
+              onChange={e => handleFileUpload(e.target.files, type)}
+              disabled={uploading}
+            />
+          </label>
+        )}
+      </div>
+      {!savedBillId && (
+        <div className="text-xs text-slate-400 flex items-center gap-2 py-2">
+          <Paperclip size={14} /> Salve a conta para adicionar anexos.
+        </div>
+      )}
+      {attachments.length === 0 && savedBillId && (
+        <div className="text-xs text-slate-400 italic py-2">Nenhum {title.toLowerCase()} anexado.</div>
+      )}
+      <div className="space-y-2 mt-2">
+        {attachments.map(att => (
+          <div key={att.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-sm">
+            <a
+              href={supabase.storage.from('bill-attachments').getPublicUrl(att.storage_path).data.publicUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline flex items-center gap-2 truncate"
+            >
+              <FileText size={14} />
+              <span className="truncate">{att.file_name}</span>
+            </a>
+            <button
+              onClick={() => handleDeleteAttachment(att)}
+              className="text-red-500 hover:text-red-700 p-1"
+              title="Remover"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -200,48 +355,43 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
                     <option key={ps.id} value={ps.id}>{ps.name}</option>
                   ))}
                 </select>
-                {paymentSources.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-1">Nenhuma fonte pagadora cadastrada. Acesse o menu Fontes Pagadoras para cadastrar.</p>
-                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Attachments — shown always on edit, shown after save on create */}
+        {/* Seção de Anexos: Boleto e Comprovantes */}
         {saved && savedBillId ? (
-          <div className="px-6 pb-4">
-            <BillAttachments billId={savedBillId} />
+          <div className="px-6 pb-4 space-y-4">
+            <AttachmentSection
+              type="boleto"
+              title="Boleto"
+              icon={<FileText size={18} className="text-blue-600" />}
+              attachments={boletos}
+            />
+            <AttachmentSection
+              type="comprovante"
+              title="Comprovantes"
+              icon={<Receipt size={18} className="text-emerald-600" />}
+              attachments={comprovantes}
+            />
           </div>
         ) : (
           <div className="px-6 pb-4">
             <div className="border border-dashed border-slate-300 rounded-xl bg-slate-50 p-4 flex items-center gap-3">
               <Paperclip size={16} className="text-slate-400 flex-shrink-0" />
-              <p className="text-xs text-slate-400">Salve a conta primeiro para poder anexar arquivos.</p>
+              <p className="text-xs text-slate-400">Salve a conta primeiro para poder anexar boletos e comprovantes.</p>
             </div>
           </div>
         )}
 
         <div className="flex gap-3 px-6 pb-6">
-          {!saved ? (
-            <>
-              <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                <Check size={16} /> Salvar
-              </button>
-              <button onClick={handleClose} className="flex items-center gap-2 border border-slate-300 text-slate-600 px-5 py-2.5 rounded-lg hover:bg-slate-50 transition-colors font-medium">
-                <X size={16} /> Cancelar
-              </button>
-            </>
-          ) : (
-            <>
-              <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                <Check size={16} /> Salvar alterações
-              </button>
-              <button onClick={handleClose} className="flex items-center gap-2 border border-slate-300 text-slate-600 px-5 py-2.5 rounded-lg hover:bg-slate-50 transition-colors font-medium">
-                <X size={16} /> Fechar
-              </button>
-            </>
-          )}
+          <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+            <Check size={16} /> Salvar
+          </button>
+          <button onClick={handleClose} className="flex items-center gap-2 border border-slate-300 text-slate-600 px-5 py-2.5 rounded-lg hover:bg-slate-50 transition-colors font-medium">
+            <X size={16} /> Cancelar
+          </button>
         </div>
       </div>
     </div>
