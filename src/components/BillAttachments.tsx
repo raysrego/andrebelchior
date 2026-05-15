@@ -8,6 +8,7 @@ const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 interface Props {
   billId: string;
+  type: 'boleto' | 'comprovante';  // novo campo obrigatório
 }
 
 function formatBytes(n: number): string {
@@ -19,7 +20,7 @@ function formatBytes(n: number): string {
 function isPdf(mime: string) { return mime === 'application/pdf'; }
 function isImage(mime: string) { return mime.startsWith('image/'); }
 
-export default function BillAttachments({ billId }: Props) {
+export default function BillAttachments({ billId, type }: Props) {
   const [attachments, setAttachments] = useState<BillAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -30,13 +31,18 @@ export default function BillAttachments({ billId }: Props) {
   const [errors, setErrors] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { fetchAttachments(); }, [billId]);
+  // Título dinâmico
+  const title = type === 'boleto' ? 'Boleto' : 'Comprovantes';
+  const icon = type === 'boleto' ? <FileText size={16} className="text-blue-500" /> : <Image size={16} className="text-emerald-500" />;
+
+  useEffect(() => { fetchAttachments(); }, [billId, type]);
 
   async function fetchAttachments() {
     const { data } = await supabase
       .from('bill_attachments')
       .select('*')
       .eq('bill_id', billId)
+      .eq('type', type)               // filtra pelo tipo
       .order('created_at');
     setAttachments(data || []);
     setLoading(false);
@@ -66,7 +72,7 @@ export default function BillAttachments({ billId }: Props) {
     setUploading(true);
     for (const file of valid) {
       const ext = file.name.split('.').pop();
-      const storagePath = `${billId}/${crypto.randomUUID()}.${ext}`;
+      const storagePath = `${billId}/${type}/${crypto.randomUUID()}.${ext}`;  // organiza por tipo
 
       const { error: uploadError } = await supabase.storage
         .from(BUCKET)
@@ -83,6 +89,7 @@ export default function BillAttachments({ billId }: Props) {
         storage_path: storagePath,
         mime_type: file.type,
         size_bytes: file.size,
+        type: type,                     // salva o tipo
       });
     }
     setUploading(false);
@@ -93,7 +100,7 @@ export default function BillAttachments({ billId }: Props) {
   async function getSignedUrl(att: BillAttachment): Promise<string | null> {
     const { data } = await supabase.storage
       .from(BUCKET)
-      .createSignedUrl(att.storage_path, 60 * 5); // 5 min
+      .createSignedUrl(att.storage_path, 60 * 5);
     return data?.signedUrl ?? null;
   }
 
@@ -129,8 +136,8 @@ export default function BillAttachments({ billId }: Props) {
       <div className="border border-slate-200 rounded-xl bg-slate-50 p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Paperclip size={16} className="text-slate-500" />
-            <span className="text-sm font-medium text-slate-700">Anexos</span>
+            {icon}
+            <span className="text-sm font-medium text-slate-700">{title}</span>
             {attachments.length > 0 && (
               <span className="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">{attachments.length}</span>
             )}
@@ -226,7 +233,7 @@ export default function BillAttachments({ billId }: Props) {
         )}
       </div>
 
-      {/* Preview modal */}
+      {/* Preview modal (mesmo código) */}
       {previewUrl && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
