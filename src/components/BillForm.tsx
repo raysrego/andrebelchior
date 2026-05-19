@@ -31,6 +31,7 @@ interface BillAttachment {
   storage_path: string;
   type: 'boleto' | 'comprovante';
   created_at: string;
+  signedUrl?: string;
 }
 
 export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props) {
@@ -82,10 +83,17 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
       console.error('Erro ao carregar anexos:', error);
       return;
     }
-    const boletosList = data?.filter(a => a.type === 'boleto') || [];
-    const comprovantesList = data?.filter(a => a.type === 'comprovante') || [];
-    setBoletos(boletosList);
-    setComprovantes(comprovantesList);
+    const items = data || [];
+    const withUrls = await Promise.all(
+      items.map(async (att) => {
+        const { data: signed } = await supabase.storage
+          .from('bill-attachments')
+          .createSignedUrl(att.storage_path, 60 * 60);
+        return { ...att, signedUrl: signed?.signedUrl ?? undefined };
+      })
+    );
+    setBoletos(withUrls.filter(a => a.type === 'boleto'));
+    setComprovantes(withUrls.filter(a => a.type === 'comprovante'));
   }
 
   async function handleFileUpload(files: FileList | null, type: 'boleto' | 'comprovante') {
@@ -246,7 +254,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
         {attachments.map(att => (
           <div key={att.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-sm">
             <a
-              href={supabase.storage.from('bill-attachments').getPublicUrl(att.storage_path).data.publicUrl}
+              href={att.signedUrl ?? '#'}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-600 hover:underline flex items-center gap-2 truncate"
