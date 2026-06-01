@@ -154,7 +154,7 @@ export default function Bills() {
     setReplicatingMonth(true);
     const nm = nextMonth(month);
     const [y, m] = nm.split('-').map(Number);
-    const toReplicate = bills.filter(b => b.status !== 'pago');
+    const toReplicate = bills;
     await Promise.all(toReplicate.map(bill => {
       const dueDay = parseInt(bill.due_date.split('-')[2], 10);
       const newDue = `${y}-${String(m).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
@@ -220,7 +220,7 @@ export default function Bills() {
           {replicateMonthConfirm ? (
             <div className="flex items-center gap-2 bg-teal-50 border border-teal-300 rounded-lg px-3 py-2">
               <span className="text-sm text-teal-800 font-medium">
-                Replicar {bills.filter(b => b.status !== 'pago').length} conta(s) para {formatMonth(nextMonth(month))}?
+                Replicar {bills.length} conta(s) para {formatMonth(nextMonth(month))}?
               </span>
               <button
                 onClick={handleReplicateMonth}
@@ -239,7 +239,7 @@ export default function Bills() {
           ) : (
             <button
               onClick={() => setReplicateMonthConfirm(true)}
-              disabled={bills.filter(b => b.status !== 'pago').length === 0}
+              disabled={bills.length === 0}
               className="flex items-center gap-2 border border-teal-300 text-teal-700 bg-teal-50 px-4 py-2 rounded-lg hover:bg-teal-100 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"
               title={`Replicar contas em aberto para ${formatMonth(nextMonth(month))}`}
             >
