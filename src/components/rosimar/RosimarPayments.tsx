@@ -75,9 +75,10 @@ export default function RosimarPayments() {
   const [filterDueDate, setFilterDueDate] = useState('');
   const [filterName, setFilterName] = useState('');
 
-  // Report state
+  // Report state (PERÍODO)
   const [showReport, setShowReport] = useState(false);
-  const [reportPeriod, setReportPeriod] = useState(getCurrentMonth());
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
   const [reportCategory, setReportCategory] = useState<Categoria | ''>('');
   const [reportData, setReportData] = useState<Payment[]>([]);
   const [reportTotal, setReportTotal] = useState(0);
@@ -312,8 +313,12 @@ export default function RosimarPayments() {
 
   const hasFilters = filterDueDate || filterName;
 
-  // ==================== RELATÓRIO ====================
+  // ==================== RELATÓRIO COM PERÍODO ====================
   async function loadReport() {
+    if (!reportStartDate || !reportEndDate) {
+      alert('Selecione a data inicial e a data final.');
+      return;
+    }
     setLoadingReport(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoadingReport(false); return; }
@@ -322,7 +327,8 @@ export default function RosimarPayments() {
       .from('rosimar_payments')
       .select('*')
       .eq('user_id', user.id)
-      .eq('reference_month', reportPeriod);
+      .gte('due_date', reportStartDate)
+      .lte('due_date', reportEndDate);
 
     if (reportCategory) {
       query = query.eq('categoria', reportCategory);
@@ -338,7 +344,9 @@ export default function RosimarPayments() {
 
   function exportToPDF() {
     const doc = new jsPDF();
-    const title = `Relatório de Despesas - ${formatMonth(reportPeriod)}${reportCategory ? ` (Categoria: ${reportCategory})` : ' (Todas as categorias)'}`;
+    const periodText = `Período: ${formatDate(reportStartDate)} a ${formatDate(reportEndDate)}`;
+    const categoryText = reportCategory ? `Categoria: ${reportCategory}` : 'Todas as categorias';
+    const title = `Relatório de Despesas - ${periodText} - ${categoryText}`;
     doc.text(title, 14, 10);
 
     const tableBody = reportData.map(p => [
@@ -359,7 +367,8 @@ export default function RosimarPayments() {
       footStyles: { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontStyle: 'bold' },
     });
 
-    doc.save(`relatorio_${reportPeriod}_${reportCategory || 'todas'}.pdf`);
+    const fileName = `relatorio_${reportStartDate}_a_${reportEndDate}${reportCategory ? `_${reportCategory}` : ''}.pdf`;
+    doc.save(fileName);
   }
 
   // ==================== RENDER ====================
@@ -789,12 +798,12 @@ export default function RosimarPayments() {
         </div>
       )}
 
-      {/* Report Modal */}
+      {/* Report Modal - com filtro por período */}
       {showReport && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800 text-lg">Relatório de Despesas</h3>
+              <h3 className="font-bold text-slate-800 text-lg">Relatório de Despesas por Período</h3>
               <button onClick={() => setShowReport(false)} className="p-1 text-slate-400 hover:text-slate-600">
                 <X size={24} />
               </button>
@@ -803,11 +812,20 @@ export default function RosimarPayments() {
             <div className="px-6 py-5 space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Mês/Ano</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Data Inicial</label>
                   <input
-                    type="month"
-                    value={reportPeriod}
-                    onChange={e => setReportPeriod(e.target.value)}
+                    type="date"
+                    value={reportStartDate}
+                    onChange={e => setReportStartDate(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 text-slate-800 text-sm focus:outline-none focus:border-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Data Final</label>
+                  <input
+                    type="date"
+                    value={reportEndDate}
+                    onChange={e => setReportEndDate(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 text-slate-800 text-sm focus:outline-none focus:border-slate-800"
                   />
                 </div>
@@ -851,8 +869,8 @@ export default function RosimarPayments() {
                 <div className="text-center text-slate-400 py-8">Carregando relatório...</div>
               )}
 
-              {!loadingReport && reportData.length === 0 && reportPeriod && (
-                <div className="text-center text-slate-400 py-8">Nenhum lançamento encontrado para o período e categoria selecionados.</div>
+              {!loadingReport && reportData.length === 0 && (reportStartDate && reportEndDate) && (
+                <div className="text-center text-slate-400 py-8">Nenhum lançamento encontrado no período selecionado.</div>
               )}
 
               {!loadingReport && reportData.length > 0 && (
