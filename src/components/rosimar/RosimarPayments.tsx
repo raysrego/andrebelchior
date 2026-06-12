@@ -1,8 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase, formatCurrency, formatDate, todayLocal, getCurrentMonth, formatMonth } from '../../lib/supabase';
 import { Plus, X, Check, ChevronLeft, ChevronRight, Paperclip, Eye, AlertTriangle, Clock, Trash2, CreditCard as Edit2, Copy, FileText, Search } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 type PaymentStatus = 'pendente' | 'pago';
+
+type Categoria = 'Revisão' | 'Abastecimento' | 'Aluguel Hangar' | 'Taxas diversas' | 'Atendimento geral' | 'Outros';
 
 interface Payment {
   id: string;
@@ -18,6 +22,7 @@ interface Payment {
   reference_month: string;
   created_at: string;
   updated_at: string;
+  categoria: Categoria;
   _attachments?: Attachment[];
 }
 
@@ -38,6 +43,7 @@ const EMPTY_FORM = {
   bank_info: '',
   observation: '',
   amount: '',
+  categoria: 'Outros' as Categoria,
 };
 
 function nextMonth(ym: string): string {
@@ -68,6 +74,14 @@ export default function RosimarPayments() {
   // Filters
   const [filterDueDate, setFilterDueDate] = useState('');
   const [filterName, setFilterName] = useState('');
+
+  // Report state
+  const [showReport, setShowReport] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState(getCurrentMonth());
+  const [reportCategory, setReportCategory] = useState<Categoria | ''>('');
+  const [reportData, setReportData] = useState<Payment[]>([]);
+  const [reportTotal, setReportTotal] = useState(0);
+  const [loadingReport, setLoadingReport] = useState(false);
 
   const today = todayLocal();
 
@@ -126,6 +140,7 @@ export default function RosimarPayments() {
       bank_info: p.bank_info,
       observation: p.observation,
       amount: String(p.amount),
+      categoria: p.categoria,
     });
     setEditingId(p.id);
     setFormError('');
@@ -143,17 +158,20 @@ export default function RosimarPayments() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setSaving(false); return; }
 
+    const payload = {
+      due_date: form.due_date,
+      item: form.item.trim(),
+      description: form.description.trim(),
+      bank_info: form.bank_info.trim(),
+      observation: form.observation.trim(),
+      amount,
+      categoria: form.categoria,
+    };
+
     if (editingId) {
       const { error } = await supabase
         .from('rosimar_payments')
-        .update({
-          due_date: form.due_date,
-          item: form.item.trim(),
-          description: form.description.trim(),
-          bank_info: form.bank_info.trim(),
-          observation: form.observation.trim(),
-          amount,
-        })
+        .update(payload)
         .eq('id', editingId)
         .eq('user_id', user.id);
       if (error) { setFormError(error.message); setSaving(false); return; }
@@ -161,13 +179,8 @@ export default function RosimarPayments() {
       const { error } = await supabase
         .from('rosimar_payments')
         .insert({
+          ...payload,
           user_id: user.id,
-          due_date: form.due_date,
-          item: form.item.trim(),
-          description: form.description.trim(),
-          bank_info: form.bank_info.trim(),
-          observation: form.observation.trim(),
-          amount,
           status: 'pendente',
           reference_month: month,
         });
@@ -181,7 +194,6 @@ export default function RosimarPayments() {
 
   function openPayModal(p: Payment) {
     if (p.status === 'pago') {
-      // Toggle back to pendente directly
       markPendente(p);
       return;
     }
@@ -238,6 +250,7 @@ export default function RosimarPayments() {
       amount: p.amount,
       status: 'pendente' as PaymentStatus,
       reference_month: nm,
+      categoria: p.categoria,
     }));
 
     await supabase.from('rosimar_payments').insert(rows);
@@ -299,10 +312,61 @@ export default function RosimarPayments() {
 
   const hasFilters = filterDueDate || filterName;
 
+  // ==================== RELATÓRIO ====================
+  async function loadReport() {
+    setLoadingReport(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setLoadingReport(false); return; }
+
+    let query = supabase
+      .from('rosimar_payments')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('reference_month', reportPeriod);
+
+    if (reportCategory) {
+      query = query.eq('categoria', reportCategory);
+    }
+
+    const { data } = await query;
+    const filtered = (data || []) as Payment[];
+    setReportData(filtered);
+    const total = filtered.reduce((sum, p) => sum + p.amount, 0);
+    setReportTotal(total);
+    setLoadingReport(false);
+  }
+
+  function exportToPDF() {
+    const doc = new jsPDF();
+    const title = `Relatório de Despesas - ${formatMonth(reportPeriod)}${reportCategory ? ` (Categoria: ${reportCategory})` : ' (Todas as categorias)'}`;
+    doc.text(title, 14, 10);
+
+    const tableBody = reportData.map(p => [
+      p.item,
+      formatDate(p.due_date),
+      formatCurrency(p.amount),
+      p.status === 'pago' ? 'Pago' : 'Pendente',
+      p.categoria,
+    ]);
+
+    autoTable(doc, {
+      startY: 20,
+      head: [['Item', 'Vencimento', 'Valor (R$)', 'Status', 'Categoria']],
+      body: tableBody,
+      foot: [['', '', `Total: ${formatCurrency(reportTotal)}`, '', '']],
+      theme: 'striped',
+      headStyles: { fillColor: [30, 41, 59] },
+      footStyles: { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontStyle: 'bold' },
+    });
+
+    doc.save(`relatorio_${reportPeriod}_${reportCategory || 'todas'}.pdf`);
+  }
+
+  // ==================== RENDER ====================
   return (
     <div className="space-y-6">
       {/* Month navigator */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <button onClick={prevMonthNav} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors">
             <ChevronLeft size={18} className="text-slate-600" />
@@ -315,6 +379,13 @@ export default function RosimarPayments() {
           </button>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowReport(true)}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
+          >
+            <FileText size={16} />
+            Relatório
+          </button>
           <button
             onClick={replicateToNextMonth}
             disabled={replicating || payments.length === 0}
@@ -445,6 +516,7 @@ export default function RosimarPayments() {
                         {p.item}
                       </span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{label}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{p.categoria}</span>
                     </div>
                     {p.description && (
                       <p className="text-xs text-slate-500 mt-0.5 truncate">{p.description}</p>
@@ -581,6 +653,22 @@ export default function RosimarPayments() {
               </div>
 
               <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Categoria</label>
+                <select
+                  value={form.categoria}
+                  onChange={e => setForm(f => ({ ...f, categoria: e.target.value as Categoria }))}
+                  className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 text-slate-800 text-sm focus:outline-none focus:border-slate-800"
+                >
+                  <option value="Revisão">Revisão</option>
+                  <option value="Abastecimento">Abastecimento</option>
+                  <option value="Aluguel Hangar">Aluguel Hangar</option>
+                  <option value="Taxas diversas">Taxas diversas</option>
+                  <option value="Atendimento geral">Atendimento geral</option>
+                  <option value="Outros">Outros</option>
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Descrição</label>
                 <input
                   type="text"
@@ -694,6 +782,114 @@ export default function RosimarPayments() {
                       </button>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {showReport && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 text-lg">Relatório de Despesas</h3>
+              <button onClick={() => setShowReport(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Mês/Ano</label>
+                  <input
+                    type="month"
+                    value={reportPeriod}
+                    onChange={e => setReportPeriod(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 text-slate-800 text-sm focus:outline-none focus:border-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Categoria</label>
+                  <select
+                    value={reportCategory}
+                    onChange={e => setReportCategory(e.target.value as Categoria | '')}
+                    className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 text-slate-800 text-sm focus:outline-none focus:border-slate-800"
+                  >
+                    <option value="">Todas</option>
+                    <option value="Revisão">Revisão</option>
+                    <option value="Abastecimento">Abastecimento</option>
+                    <option value="Aluguel Hangar">Aluguel Hangar</option>
+                    <option value="Taxas diversas">Taxas diversas</option>
+                    <option value="Atendimento geral">Atendimento geral</option>
+                    <option value="Outros">Outros</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={loadReport}
+                  disabled={loadingReport}
+                  className="bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-60 transition-colors"
+                >
+                  {loadingReport ? 'Carregando...' : 'Filtrar'}
+                </button>
+                {reportData.length > 0 && (
+                  <button
+                    onClick={exportToPDF}
+                    className="bg-red-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 hover:bg-red-700 transition-colors"
+                  >
+                    <FileText size={16} /> Exportar PDF
+                  </button>
+                )}
+              </div>
+
+              {loadingReport && (
+                <div className="text-center text-slate-400 py-8">Carregando relatório...</div>
+              )}
+
+              {!loadingReport && reportData.length === 0 && reportPeriod && (
+                <div className="text-center text-slate-400 py-8">Nenhum lançamento encontrado para o período e categoria selecionados.</div>
+              )}
+
+              {!loadingReport && reportData.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead className="bg-slate-100">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Item</th>
+                        <th className="px-4 py-2 text-left">Vencimento</th>
+                        <th className="px-4 py-2 text-right">Valor (R$)</th>
+                        <th className="px-4 py-2 text-left">Status</th>
+                        <th className="px-4 py-2 text-left">Categoria</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData.map(p => (
+                        <tr key={p.id} className="border-t border-slate-200">
+                          <td className="px-4 py-2">{p.item}</td>
+                          <td className="px-4 py-2">{formatDate(p.due_date)}</td>
+                          <td className="px-4 py-2 text-right">{formatCurrency(p.amount)}</td>
+                          <td className="px-4 py-2">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.status === 'pago' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {p.status === 'pago' ? 'Pago' : 'Pendente'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2">{p.categoria}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-50 font-bold">
+                      <tr>
+                        <td colSpan={2} className="px-4 py-2 text-right">Total</td>
+                        <td className="px-4 py-2 text-right">{formatCurrency(reportTotal)}</td>
+                        <td colSpan={2}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
               )}
             </div>
