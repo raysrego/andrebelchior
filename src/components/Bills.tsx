@@ -275,14 +275,24 @@ export default function Bills() {
   th.right{text-align:right}
   td{padding:7px 10px;font-size:11px;border-bottom:1px solid #f1f5f9;color:#334155}
   td.right{text-align:right;font-weight:600}
+  .row-orange{background:#ffedd5}
+  .row-blue{background:#dbeafe}
+  .row-yellow{background:#fef9c3}
+  .row-orange td{border-bottom-color:#fed7aa}
+  .row-blue td{border-bottom-color:#bfdbfe}
+  .row-yellow td{border-bottom-color:#fde68a}
+  .row-orange td:first-child{border-left:5px solid #f97316}
+  .row-blue td:first-child{border-left:5px solid #3b82f6}
+  .row-yellow td:first-child{border-left:5px solid #eab308}
+  .row-pad td:first-child{border-left:5px solid transparent}
   .badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:600}
   .badge-pago{background:#d1fae5;color:#065f46}
   .badge-aberto{background:#dbeafe;color:#1e40af}
   .badge-vencido{background:#fee2e2;color:#991b1b}
-  .color-badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:10px;font-weight:600;color:#fff}
-  .cb-orange{background:#fb923c}
-  .cb-blue{background:#60a5fa;color:#0f172a}
-  .cb-yellow{background:#fde047;color:#1e293b}
+  .color-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:9.5px;font-weight:700}
+  .cp-orange{background:#f97316;color:#fff}
+  .cp-blue{background:#3b82f6;color:#fff}
+  .cp-yellow{background:#eab308;color:#1e293b}
   .total-row td{font-weight:700;background:#f8fafc;border-top:2px solid #e2e8f0}
   .ext-badge{background:#fef3c7;color:#92400e;display:inline-block;padding:1px 6px;border-radius:99px;font-size:10px;margin-left:4px}
   .footer{margin-top:28px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;display:flex;justify-content:space-between}
@@ -301,9 +311,9 @@ export default function Bills() {
 </div>
 <div class="filters"><strong>Filtros:</strong> ${filtersLabel}</div>
 <div class="legend">
-  <span class="legend-item"><span class="swatch" style="background:#fb923c"></span>Laranja — Pagar na lotérica 8 dias antes</span>
-  <span class="legend-item"><span class="swatch" style="background:#60a5fa"></span>Azul — Enviar para André e cobrar até ele pagar</span>
-  <span class="legend-item"><span class="swatch" style="background:#fde047"></span>Amarelo Neon — Pagar da Nubank</span>
+  <span class="legend-item"><span class="swatch" style="background:#f97316"></span>Laranja — Pagar na lotérica 8 dias antes</span>
+  <span class="legend-item"><span class="swatch" style="background:#3b82f6"></span>Azul — Enviar para André e cobrar até ele pagar</span>
+  <span class="legend-item"><span class="swatch" style="background:#eab308"></span>Amarelo Neon — Pagar da Nubank</span>
 </div>
 <div class="summary-grid">
   <div class="summary-card"><div class="label">Total</div><div class="value">${formatCurrency(rows.reduce((s,b)=>s+b.amount,0))}</div></div>
@@ -324,11 +334,14 @@ export default function Bills() {
   </tr></thead>
   <tbody>
     ${rows.map(b => {
-      const cb = b.color_tag === 'orange' ? '<span class="color-badge cb-orange">Laranja</span>'
-        : b.color_tag === 'blue' ? '<span class="color-badge cb-blue">Azul</span>'
-        : b.color_tag === 'yellow' ? '<span class="color-badge cb-yellow">Amarelo</span>' : '—';
+      const rowClass = b.color_tag === 'orange' ? 'row-orange'
+        : b.color_tag === 'blue' ? 'row-blue'
+        : b.color_tag === 'yellow' ? 'row-yellow' : 'row-pad';
+      const cb = b.color_tag === 'orange' ? '<span class="color-pill cp-orange"><span class="swatch" style="background:#fff;border:1px solid #f97316"></span>Laranja</span>'
+        : b.color_tag === 'blue' ? '<span class="color-pill cp-blue"><span class="swatch" style="background:#fff;border:1px solid #3b82f6"></span>Azul</span>'
+        : b.color_tag === 'yellow' ? '<span class="color-pill cp-yellow"><span class="swatch" style="background:#fff;border:1px solid #eab308"></span>Amarelo</span>' : '<span style="color:#cbd5e1">—</span>';
       const ext = b.external_payment ? `<span class="ext-badge">${(b.payment_sources as any)?.name || 'Externo'}</span>` : '';
-      return `<tr>
+      return `<tr class="${rowClass}">
         <td>${cb}</td>
         <td><span class="badge badge-${b.status}">${STATUS_LABELS[b.status]}</span></td>
         <td>${b.item}${ext}</td>

@@ -136,7 +136,7 @@ export default function App() {
 
         {/* Page content */}
         <main className="flex-1 p-6 overflow-auto">
-          <div className="max-w-6xl mx-auto">
+          <div className={`mx-auto ${activeTab === 'bills' ? 'max-w-[1600px]' : 'max-w-6xl'}`}>
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'bills' && <Bills />}
             {activeTab === 'income' && <IncomeEntries />}
