@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase, Bill, CostCenter, PaymentSource, computeStatus, formatCurrency, formatDate, formatMonth, getCurrentMonth, todayLocal } from '../lib/supabase';
-import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink, Bell, Paperclip, AlertTriangle, CopyCheck, Search } from 'lucide-react';
+import { supabase, Bill, CostCenter, PaymentSource, ColorTag, COLOR_TAGS, COLOR_ROW_STYLES, computeStatus, formatCurrency, formatDate, formatMonth, getCurrentMonth, todayLocal } from '../lib/supabase';
+import { Plus, Pencil, Trash2, Copy, ChevronLeft, ChevronRight, FileText, ExternalLink, Bell, Paperclip, AlertTriangle, CopyCheck, Search, FileDown, Tag } from 'lucide-react';
 import BillForm from './BillForm';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -48,6 +48,7 @@ export default function Bills() {
   const [filterName, setFilterName] = useState('');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterColor, setFilterColor] = useState<ColorTag | 'none' | ''>('');
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
   const [dismissedAlert, setDismissedAlert] = useState(false);
@@ -145,6 +146,7 @@ export default function Bills() {
       reference_month: nm,
       external_payment: bill.external_payment,
       payment_source_id: bill.payment_source_id,
+      color_tag: bill.color_tag,
     });
     setReplicateConfirm(null);
     fetchBills();
@@ -170,6 +172,7 @@ export default function Bills() {
         external_payment: bill.external_payment,
         external_payment_description: bill.external_payment_description,
         payment_source_id: bill.payment_source_id,
+        color_tag: bill.color_tag,
       });
     }));
     setReplicatingMonth(false);
@@ -193,6 +196,10 @@ export default function Bills() {
   if (filterName) filtered = filtered.filter(b => b.item.toLowerCase().includes(filterName.toLowerCase()));
   if (filterDateFrom) filtered = filtered.filter(b => b.due_date >= filterDateFrom);
   if (filterDateTo) filtered = filtered.filter(b => b.due_date <= filterDateTo);
+  if (filterColor) {
+    if (filterColor === 'none') filtered = filtered.filter(b => !b.color_tag);
+    else filtered = filtered.filter(b => b.color_tag === filterColor);
+  }
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -200,14 +207,155 @@ export default function Bills() {
   const paid = bills.filter(b => b.status === 'pago').reduce((s, b) => s + b.amount, 0);
   const pending = bills.filter(b => b.status !== 'pago').reduce((s, b) => s + b.amount, 0);
   const filteredTotal = filtered.reduce((s, b) => s + b.amount, 0);
-  const hasActiveFilter = !!(filterName || filterStatus || filterCostCenter || filterPaymentSource || filterDateFrom || filterDateTo);
+  const hasActiveFilter = !!(filterName || filterStatus || filterCostCenter || filterPaymentSource || filterDateFrom || filterDateTo || filterColor);
 
   const today = todayLocal();
   const dueTodayBills = bills.filter(b => b.due_date === today && b.status !== 'pago');
   const overdueBills = bills.filter(b => b.status === 'vencido');
 
   useEffect(() => { setPage(1); setDismissedAlert(false); setDismissedOverdue(false); }, [month]);
-  useEffect(() => { setPage(1); }, [filterStatus, filterCostCenter, filterPaymentSource, filterName, filterDateFrom, filterDateTo]);
+  useEffect(() => { setPage(1); }, [filterStatus, filterCostCenter, filterPaymentSource, filterName, filterDateFrom, filterDateTo, filterColor]);
+
+  function handleExportPDF() {
+    const genDate = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const periodLabel = formatMonth(month);
+    const activeFilters: string[] = [];
+    if (filterStatus) activeFilters.push(`Status: ${STATUS_LABELS[filterStatus]}`);
+    if (filterCostCenter) {
+      const cc = costCenters.find(c => c.id === filterCostCenter);
+      if (cc) activeFilters.push(`Centro de Custo: ${cc.name}`);
+    }
+    if (filterPaymentSource) {
+      if (filterPaymentSource === '__none__') activeFilters.push('Fonte: Sem fonte (pessoal)');
+      else {
+        const ps = paymentSources.find(p => p.id === filterPaymentSource);
+        if (ps) activeFilters.push(`Fonte: ${ps.name}`);
+      }
+    }
+    if (filterColor) {
+      if (filterColor === 'none') activeFilters.push('Cor: Sem cor');
+      else {
+        const ct = COLOR_TAGS.find(c => c.value === filterColor);
+        if (ct) activeFilters.push(`Cor: ${ct.label}`);
+      }
+    }
+    if (filterName) activeFilters.push(`Busca: "${filterName}"`);
+    if (filterDateFrom) activeFilters.push(`De: ${formatDate(filterDateFrom)}`);
+    if (filterDateTo) activeFilters.push(`Até: ${formatDate(filterDateTo)}`);
+    const filtersLabel = activeFilters.length ? activeFilters.join(' · ') : 'Nenhum filtro';
+
+    const rows = filtered.length > 0 ? filtered : bills;
+
+    const pw = window.open('', '_blank', 'width=900,height=700');
+    if (!pw) return;
+
+    pw.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Contas a Pagar — ${periodLabel}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#1e293b;background:#fff;padding:36px}
+  .header{border-bottom:2px solid #0f172a;padding-bottom:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end}
+  .header-left h1{font-size:18px;font-weight:700;color:#0f172a}
+  .header-left p{font-size:11px;color:#64748b;margin-top:2px}
+  .header-right{text-align:right;font-size:11px;color:#64748b}
+  .filters{font-size:11px;color:#64748b;margin-bottom:18px;padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px}
+  .legend{margin-bottom:18px;font-size:11px;color:#475569}
+  .legend-item{display:inline-flex;align-items:center;gap:6px;margin-right:16px}
+  .swatch{width:12px;height:12px;border-radius:3px;display:inline-block;border:1px solid #cbd5e1}
+  .summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}
+  .summary-card{border:1px solid #e2e8f0;border-radius:6px;padding:10px 14px}
+  .summary-card .label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px}
+  .summary-card .value{font-size:15px;font-weight:700}
+  table{width:100%;border-collapse:collapse}
+  thead tr{background:#f8fafc}
+  th{text-align:left;padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;border-bottom:1px solid #e2e8f0}
+  th.right{text-align:right}
+  td{padding:7px 10px;font-size:11px;border-bottom:1px solid #f1f5f9;color:#334155}
+  td.right{text-align:right;font-weight:600}
+  .badge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;font-weight:600}
+  .badge-pago{background:#d1fae5;color:#065f46}
+  .badge-aberto{background:#dbeafe;color:#1e40af}
+  .badge-vencido{background:#fee2e2;color:#991b1b}
+  .color-badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:10px;font-weight:600;color:#fff}
+  .cb-orange{background:#fb923c}
+  .cb-blue{background:#60a5fa;color:#0f172a}
+  .cb-yellow{background:#fde047;color:#1e293b}
+  .total-row td{font-weight:700;background:#f8fafc;border-top:2px solid #e2e8f0}
+  .ext-badge{background:#fef3c7;color:#92400e;display:inline-block;padding:1px 6px;border-radius:99px;font-size:10px;margin-left:4px}
+  .footer{margin-top:28px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;display:flex;justify-content:space-between}
+  @media print{body{padding:20px}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <h1>Contas a Pagar</h1>
+    <p>${periodLabel}</p>
+  </div>
+  <div class="header-right">
+    <p>Emitido em ${genDate}</p>
+  </div>
+</div>
+<div class="filters"><strong>Filtros:</strong> ${filtersLabel}</div>
+<div class="legend">
+  <span class="legend-item"><span class="swatch" style="background:#fb923c"></span>Laranja — Pagar na lotérica 8 dias antes</span>
+  <span class="legend-item"><span class="swatch" style="background:#60a5fa"></span>Azul — Enviar para André e cobrar até ele pagar</span>
+  <span class="legend-item"><span class="swatch" style="background:#fde047"></span>Amarelo Neon — Pagar da Nubank</span>
+</div>
+<div class="summary-grid">
+  <div class="summary-card"><div class="label">Total</div><div class="value">${formatCurrency(rows.reduce((s,b)=>s+b.amount,0))}</div></div>
+  <div class="summary-card"><div class="label">Pago</div><div class="value" style="color:#059669">${formatCurrency(rows.filter(b=>b.status==='pago').reduce((s,b)=>s+b.amount,0))}</div></div>
+  <div class="summary-card"><div class="label">Em Aberto</div><div class="value" style="color:#ea580c">${formatCurrency(rows.filter(b=>b.status!=='pago').reduce((s,b)=>s+b.amount,0))}</div></div>
+</div>
+<table>
+  <thead><tr>
+    <th>Cor</th>
+    <th>Status</th>
+    <th>Item</th>
+    <th>Vencimento</th>
+    <th>Dt. Pagamento</th>
+    <th class="right">Valor</th>
+    <th>Centro de Custo</th>
+    <th>Classificação</th>
+    <th>Dado Bancário</th>
+  </tr></thead>
+  <tbody>
+    ${rows.map(b => {
+      const cb = b.color_tag === 'orange' ? '<span class="color-badge cb-orange">Laranja</span>'
+        : b.color_tag === 'blue' ? '<span class="color-badge cb-blue">Azul</span>'
+        : b.color_tag === 'yellow' ? '<span class="color-badge cb-yellow">Amarelo</span>' : '—';
+      const ext = b.external_payment ? `<span class="ext-badge">${(b.payment_sources as any)?.name || 'Externo'}</span>` : '';
+      return `<tr>
+        <td>${cb}</td>
+        <td><span class="badge badge-${b.status}">${STATUS_LABELS[b.status]}</span></td>
+        <td>${b.item}${ext}</td>
+        <td>${formatDate(b.due_date)}</td>
+        <td>${b.payment_date ? formatDate(b.payment_date) : '—'}</td>
+        <td class="right">${formatCurrency(b.amount)}</td>
+        <td>${(b.cost_centers as any)?.name || '—'}</td>
+        <td>${CLASS_LABELS[b.classification]}</td>
+        <td>${b.bank_info || '—'}</td>
+      </tr>`;
+    }).join('')}
+  </tbody>
+  <tfoot><tr class="total-row">
+    <td colspan="5">Total (${rows.length} ${rows.length === 1 ? 'item' : 'itens'})</td>
+    <td class="right">${formatCurrency(rows.reduce((s,b)=>s+b.amount,0))}</td>
+    <td colspan="3"></td>
+  </tr></tfoot>
+</table>
+<div class="footer">
+  <span>Sistema Financeiro — Relatório gerado automaticamente</span>
+  <span>${periodLabel}</span>
+</div>
+<script>window.onload=function(){window.print()}</script>
+</body>
+</html>`);
+    pw.document.close();
+  }
 
   return (
     <div className="space-y-4">
@@ -253,6 +401,15 @@ export default function Bills() {
           >
             <Plus size={18} />
             Nova Conta
+          </button>
+          <button
+            onClick={handleExportPDF}
+            disabled={bills.length === 0}
+            className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Exportar PDF conforme filtros"
+          >
+            <FileDown size={16} />
+            Exportar PDF
           </button>
         </div>
       </div>
@@ -318,6 +475,27 @@ export default function Bills() {
         </button>
       </div>
 
+      {/* Color legend */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mr-2">
+            <Tag size={13} /> Legenda:
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-600">
+            <span className="w-3 h-3 rounded-sm bg-orange-400" />
+            <span>Laranja — Pagar na lotérica 8 dias antes</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-600">
+            <span className="w-3 h-3 rounded-sm bg-blue-400" />
+            <span>Azul — Enviar para André e cobrar até ele pagar</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-600">
+            <span className="w-3 h-3 rounded-sm bg-yellow-300" />
+            <span>Amarelo Neon — Pagar da Nubank</span>
+          </div>
+        </div>
+      </div>
+
       {/* Filters */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -376,11 +554,19 @@ export default function Bills() {
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Categoria de Cor</label>
+            <select value={filterColor} onChange={e => setFilterColor(e.target.value as ColorTag | 'none' | '')} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Todas</option>
+              {COLOR_TAGS.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
+              <option value="none">Sem cor</option>
+            </select>
+          </div>
         </div>
-        {(filterName || filterStatus || filterCostCenter || filterPaymentSource || filterDateFrom || filterDateTo) && (
+        {(filterName || filterStatus || filterCostCenter || filterPaymentSource || filterDateFrom || filterDateTo || filterColor) && (
           <div className="mt-3 flex justify-end">
             <button
-              onClick={() => { setFilterName(''); setFilterStatus(''); setFilterCostCenter(''); setFilterPaymentSource(''); setFilterDateFrom(''); setFilterDateTo(''); }}
+              onClick={() => { setFilterName(''); setFilterStatus(''); setFilterCostCenter(''); setFilterPaymentSource(''); setFilterDateFrom(''); setFilterDateTo(''); setFilterColor(''); }}
               className="border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg text-sm hover:bg-slate-50 transition-colors"
             >
               Limpar filtros
@@ -418,6 +604,7 @@ export default function Bills() {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Cor</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Item</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Vencimento</th>
@@ -430,8 +617,23 @@ export default function Bills() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {paginated.map(bill => (
-                  <tr key={bill.id} className={`transition-colors ${bill.status === 'pago' ? 'bg-emerald-50/40 hover:bg-emerald-50' : bill.due_date === today ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-slate-50'}`}>
+                {paginated.map(bill => {
+                  const colorStyle = bill.color_tag ? COLOR_ROW_STYLES[bill.color_tag] : null;
+                  const rowBg = colorStyle
+                    ? colorStyle.row
+                    : bill.status === 'pago'
+                      ? 'bg-emerald-50/40 hover:bg-emerald-50'
+                      : bill.due_date === today
+                        ? 'bg-amber-50/60 hover:bg-amber-50'
+                        : 'hover:bg-slate-50';
+                  return (
+                  <tr key={bill.id} className={`transition-colors ${rowBg}`}>
+                    <td className="px-4 py-3">
+                      {bill.color_tag === 'orange' && <span className="inline-block w-4 h-4 rounded-full bg-orange-400" title="Laranja — Pagar na lotérica 8 dias antes" />}
+                      {bill.color_tag === 'blue' && <span className="inline-block w-4 h-4 rounded-full bg-blue-400" title="Azul — Enviar para André e cobrar até ele pagar" />}
+                      {bill.color_tag === 'yellow' && <span className="inline-block w-4 h-4 rounded-full bg-yellow-300" title="Amarelo Neon — Pagar da Nubank" />}
+                      {!bill.color_tag && <span className="text-slate-300">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${STATUS_COLORS[bill.status]}`}>
                         {STATUS_LABELS[bill.status]}
@@ -439,7 +641,7 @@ export default function Bills() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className={`font-medium ${bill.status === 'pago' ? 'text-emerald-700' : 'text-slate-800'}`}>{bill.item}</span>
+                        <span className={`font-medium ${bill.status === 'pago' ? 'text-emerald-700' : colorStyle ? colorStyle.cellText : 'text-slate-800'}`}>{bill.item}</span>
                         {bill.external_payment && (
                           <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full" title={(bill.payment_sources as any)?.name || 'Pagamento Externo'}>
                             <ExternalLink size={10} />
@@ -462,7 +664,7 @@ export default function Bills() {
                     </td>
                     <td className={`px-4 py-3 text-sm ${bill.status === 'pago' ? 'text-emerald-600' : bill.due_date === today ? 'text-amber-700 font-semibold' : 'text-slate-600'}`}>{formatDate(bill.due_date)}</td>
                     <td className="px-4 py-3 text-sm text-emerald-600 font-medium">{bill.payment_date ? formatDate(bill.payment_date) : '—'}</td>
-                    <td className={`px-4 py-3 text-right font-semibold ${bill.status === 'pago' ? 'text-emerald-700' : 'text-slate-800'}`}>{formatCurrency(bill.amount)}</td>
+                    <td className={`px-4 py-3 text-right font-semibold ${bill.status === 'pago' ? 'text-emerald-700' : colorStyle ? colorStyle.cellText : 'text-slate-800'}`}>{formatCurrency(bill.amount)}</td>
                     <td className="px-4 py-3 text-slate-600 text-sm">{(bill.cost_centers as any)?.name || '—'}</td>
                     <td className="px-4 py-3 text-slate-600 text-sm">{CLASS_LABELS[bill.classification]}</td>
                     <td className="px-4 py-3 text-slate-500 text-sm">{bill.bank_info || '—'}</td>
@@ -494,12 +696,13 @@ export default function Bills() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
               {hasActiveFilter && (
                 <tfoot>
                   <tr className="bg-slate-50 border-t-2 border-slate-300">
-                    <td colSpan={4} className="px-4 py-3 text-sm font-semibold text-slate-600 text-right">
+                    <td colSpan={5} className="px-4 py-3 text-sm font-semibold text-slate-600 text-right">
                       Total filtrado ({filtered.length} {filtered.length === 1 ? 'item' : 'itens'}):
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-slate-800 text-base">

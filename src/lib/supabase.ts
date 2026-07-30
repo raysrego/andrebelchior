@@ -17,6 +17,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export type Status = 'aberto' | 'pago' | 'vencido';
 export type Classification = 'fixo' | 'fixo_variavel' | 'extra';
+export type ColorTag = 'orange' | 'blue' | 'yellow' | null;
+
+export const COLOR_TAGS: { value: NonNullable<ColorTag>; label: string; legend: string; swatch: string }[] = [
+  { value: 'orange', label: 'Laranja', legend: 'Pagar na lotérica 8 dias antes', swatch: 'bg-orange-400' },
+  { value: 'blue', label: 'Azul', legend: 'Enviar para André e cobrar até ele pagar', swatch: 'bg-blue-400' },
+  { value: 'yellow', label: 'Amarelo Neon', legend: 'Pagar da Nubank', swatch: 'bg-yellow-300' },
+];
+
+export const COLOR_ROW_STYLES: Record<NonNullable<ColorTag>, { row: string; cellText: string }> = {
+  orange: { row: 'bg-orange-100/70 hover:bg-orange-100', cellText: 'text-orange-900' },
+  blue: { row: 'bg-blue-100/70 hover:bg-blue-100', cellText: 'text-blue-900' },
+  yellow: { row: 'bg-yellow-100/80 hover:bg-yellow-200/80', cellText: 'text-yellow-900' },
+};
 
 export interface CostCenter {
   id: string;
@@ -46,6 +59,7 @@ export type Bill = {
   external_payment_description: string;
   payment_source_id: string | null;
   payment_date: string | null;
+  color_tag: ColorTag;
   created_at?: string;
   updated_at?: string;
   cost_centers?: { id: string; name: string } | null;

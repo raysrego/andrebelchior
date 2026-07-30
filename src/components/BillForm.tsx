@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { supabase, Bill, CostCenter, PaymentSource, Status, Classification, getCurrentMonth, todayLocal } from '../lib/supabase';
-import { X, Check, ExternalLink, Paperclip, Upload, Trash2, FileText, Receipt } from 'lucide-react';
+import { supabase, Bill, CostCenter, PaymentSource, Status, Classification, ColorTag, COLOR_TAGS, getCurrentMonth, todayLocal } from '../lib/supabase';
+import { X, Check, ExternalLink, Paperclip, Upload, Trash2, FileText, Receipt, Tag } from 'lucide-react';
 
 interface Props {
   bill?: Bill | null;
@@ -22,6 +22,7 @@ const emptyForm = {
   external_payment_description: '',
   payment_source_id: '',
   payment_date: '',
+  color_tag: null as ColorTag,
 };
 
 // Interface para anexo (com tipo)
@@ -68,6 +69,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
         external_payment_description: bill.external_payment_description ?? '',
         payment_source_id: bill.payment_source_id || '',
         payment_date: bill.payment_date || '',
+        color_tag: bill.color_tag ?? null,
       });
       loadAttachments(bill.id);
     }
@@ -189,6 +191,7 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
       external_payment_description: form.external_payment ? form.external_payment_description : '',
       payment_source_id: form.external_payment && form.payment_source_id ? form.payment_source_id : null,
       payment_date: form.status === 'pago' && form.payment_date ? form.payment_date : null,
+      color_tag: form.color_tag,
       updated_at: new Date().toISOString(),
     };
 
@@ -321,6 +324,38 @@ export default function BillForm({ bill, onClose, onSaved, defaultMonth }: Props
             </select>
           ))}
           {field('Dado Bancário', <input type="text" value={form.bank_info} onChange={e => setForm(f => ({ ...f, bank_info: e.target.value }))} className={inputClass} placeholder="Banco / Conta / Pix" />)}
+        </div>
+
+        {/* Color tag section */}
+        <div className="px-6 pb-4">
+          <div className="border border-slate-200 rounded-xl bg-slate-50 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Tag size={16} className="text-slate-500" />
+              <h3 className="text-sm font-medium text-slate-700">Categoria de Cor</h3>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, color_tag: null }))}
+                className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${form.color_tag === null ? 'border-slate-800 bg-white shadow-sm' : 'border-slate-200 bg-white hover:border-slate-400'}`}
+              >
+                <span className="w-6 h-6 rounded-full border-2 border-slate-300 bg-white" />
+                <span className="text-xs font-medium text-slate-600">Sem cor</span>
+              </button>
+              {COLOR_TAGS.map(ct => (
+                <button
+                  key={ct.value}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, color_tag: ct.value }))}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-center ${form.color_tag === ct.value ? 'border-slate-800 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-400'}`}
+                >
+                  <span className={`w-6 h-6 rounded-full ${ct.swatch}`} />
+                  <span className="text-xs font-medium text-slate-700">{ct.label}</span>
+                  <span className="text-[10px] text-slate-400 leading-tight">{ct.legend}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* External payment section */}
