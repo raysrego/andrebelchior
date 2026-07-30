@@ -322,42 +322,30 @@ export default function Bills() {
 </div>
 <table>
   <thead><tr>
-    <th>Cor</th>
     <th>Status</th>
     <th>Item</th>
     <th>Vencimento</th>
     <th>Dt. Pagamento</th>
     <th class="right">Valor</th>
-    <th>Centro de Custo</th>
-    <th>Classificação</th>
-    <th>Dado Bancário</th>
   </tr></thead>
   <tbody>
     ${rows.map(b => {
       const rowClass = b.color_tag === 'orange' ? 'row-orange'
         : b.color_tag === 'blue' ? 'row-blue'
         : b.color_tag === 'yellow' ? 'row-yellow' : 'row-pad';
-      const cb = b.color_tag === 'orange' ? '<span class="color-pill cp-orange"><span class="swatch" style="background:#fff;border:1px solid #f97316"></span>Laranja</span>'
-        : b.color_tag === 'blue' ? '<span class="color-pill cp-blue"><span class="swatch" style="background:#fff;border:1px solid #3b82f6"></span>Azul</span>'
-        : b.color_tag === 'yellow' ? '<span class="color-pill cp-yellow"><span class="swatch" style="background:#fff;border:1px solid #eab308"></span>Amarelo</span>' : '<span style="color:#cbd5e1">—</span>';
       const ext = b.external_payment ? `<span class="ext-badge">${(b.payment_sources as any)?.name || 'Externo'}</span>` : '';
       return `<tr class="${rowClass}">
-        <td>${cb}</td>
         <td><span class="badge badge-${b.status}">${STATUS_LABELS[b.status]}</span></td>
         <td>${b.item}${ext}</td>
         <td>${formatDate(b.due_date)}</td>
         <td>${b.payment_date ? formatDate(b.payment_date) : '—'}</td>
         <td class="right">${formatCurrency(b.amount)}</td>
-        <td>${(b.cost_centers as any)?.name || '—'}</td>
-        <td>${CLASS_LABELS[b.classification]}</td>
-        <td>${b.bank_info || '—'}</td>
       </tr>`;
     }).join('')}
   </tbody>
   <tfoot><tr class="total-row">
-    <td colspan="5">Total (${rows.length} ${rows.length === 1 ? 'item' : 'itens'})</td>
+    <td colspan="4">Total (${rows.length} ${rows.length === 1 ? 'item' : 'itens'})</td>
     <td class="right">${formatCurrency(rows.reduce((s,b)=>s+b.amount,0))}</td>
-    <td colspan="3"></td>
   </tr></tfoot>
 </table>
 <div class="footer">
